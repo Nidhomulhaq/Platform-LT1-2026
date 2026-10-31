@@ -3823,8 +3823,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
         setErrorMessage("");
         try {
           if (!isConnected) {
-            router.push("/dashboard");
-            return;
+            throw new Error(
+              "Koneksi Supabase belum siap. Masukkan Project URL dan publishable key sebelum membuat sesi akun.",
+            );
           }
           if (register) {
             const signedIn = await signUp(name, email, password);
@@ -3859,7 +3860,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
             <p className="auth-story-foot">
               {isConnected
                 ? "Akun dan data kegiatan terhubung ke Supabase."
-                : "Mode pratinjau lokal · Supabase belum dikonfigurasi"}
+                : "Akses kegiatan hanya tersedia setelah Supabase dikonfigurasi."}
             </p>
           </section>
           <section className="auth-main">
@@ -3870,8 +3871,18 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   ? "Buat akun peserta dengan email dan kata sandi."
                   : isConnected
                     ? "Masuk dengan akun peserta atau petugas yang terdaftar."
-                    : "Buka pratinjau lokal untuk menjelajahi dashboard."}
+                    : "Akses akun sedang dinonaktifkan sampai koneksi Supabase disiapkan."}
               </p>
+              {!isConnected ? (
+                <div className="notice auth-error" role="alert">
+                  <CircleHelp aria-hidden="true" />
+                  <p>
+                    Tambahkan NEXT_PUBLIC_SUPABASE_URL dan
+                    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY di .env.local, lalu
+                    jalankan ulang aplikasi.
+                  </p>
+                </div>
+              ) : null}
               <div className="form-stack">
                 {register ? (
                   <label>
@@ -3881,6 +3892,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
                       placeholder="Nama peserta"
                       autoComplete="name"
                       value={name}
+                      disabled={!isConnected || busy}
                       onChange={(event) => setName(event.target.value)}
                       required
                     />
@@ -3894,6 +3906,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
                     placeholder="nama@email.com"
                     autoComplete="email"
                     value={email}
+                    disabled={!isConnected || busy}
                     onChange={(event) => setEmail(event.target.value)}
                     required
                   />
@@ -3907,20 +3920,21 @@ function EventCoordination({ notify }: { notify: Notify }) {
                     autoComplete={register ? "new-password" : "current-password"}
                     minLength={8}
                     value={password}
+                    disabled={!isConnected || busy}
                     onChange={(event) => setPassword(event.target.value)}
                     required
                   />
                 </label>
-                <button className="button" type="submit" disabled={busy}>
+                <button
+                  className="button"
+                  type="submit"
+                  disabled={!isConnected || busy}
+                >
                   {busy
                     ? "Memproses…"
                     : register
-                      ? isConnected
-                        ? "Buat akun peserta"
-                        : "Buat akun demo"
-                      : isConnected
-                        ? "Masuk"
-                        : "Masuk ke dashboard"}
+                      ? "Buat akun peserta"
+                      : "Masuk"}
                   <ArrowRight aria-hidden="true" />
                 </button>
               </div>
@@ -3942,7 +3956,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
               <p className="field-hint">
                 {isConnected
                   ? "Akun baru mendapat peran peserta. Operator akan memetakan regu dan pangkalan."
-                  : "Mode pratinjau: formulir ini tidak membuat atau menyimpan akun."}
+                  : "Setelah koneksi aktif, pendaftaran membuat akun peserta yang diverifikasi melalui email."}
               </p>
               <div className="auth-switch">
                 {register ? "Sudah punya akun? " : "Belum terdaftar? "}
@@ -3984,7 +3998,6 @@ function EventCoordination({ notify }: { notify: Notify }) {
       };
 
       const isAuthView = view === "login" || view === "register";
-      const isPublicView = view === "verify";
       const requiredRole: Role | null =
         view === "operator" ||
         view === "scores" ||
@@ -4010,7 +4023,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
       };
 
       React.useEffect(() => {
-        if (!isConnected || !authReady || isAuthView || isPublicView) return;
+        if (!isConnected || !authReady || isAuthView) return;
         if (!session) {
           router.replace("/login");
         } else if (profile && requiredRole && profile.role !== requiredRole) {
@@ -4020,14 +4033,31 @@ function EventCoordination({ notify }: { notify: Notify }) {
         authReady,
         isAuthView,
         isConnected,
-        isPublicView,
         profile,
         requiredRole,
         router,
         session,
       ]);
 
-      if (isConnected && !isAuthView && !isPublicView) {
+      if (!isConnected && !isAuthView) {
+        return (
+          <main className="auth-main">
+            <section className="auth-card" role="alert">
+              <h2>Koneksi Supabase diperlukan</h2>
+              <p>
+                Halaman kegiatan hanya tersedia untuk akun yang sudah masuk.
+                Konfigurasikan URL proyek dan publishable key Supabase terlebih
+                dahulu.
+              </p>
+              <Link className="button" href="/login">
+                Ke halaman masuk
+              </Link>
+            </section>
+          </main>
+        );
+      }
+
+      if (isConnected && !isAuthView) {
         if (!authReady || dataLoading || !session) {
           return (
             <main className="auth-main">

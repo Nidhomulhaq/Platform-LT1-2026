@@ -20,7 +20,7 @@ dan jalankan hasilnya memakai `npm run start`.
 
    ```env
    NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=<publishable-key>
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
    ```
 
    Jangan masukkan password database atau service-role key ke variabel `NEXT_PUBLIC_*`.
@@ -50,9 +50,11 @@ dan jalankan hasilnya memakai `npm run start`.
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
 
-Tanpa kedua variabel Supabase, aplikasi menggunakan mode demo `localStorage`.
-Jangan memakai connection string PostgreSQL atau service-role key di aplikasi
-browser.
+Supabase wajib dikonfigurasi untuk membuka aplikasi. Tanpa URL dan publishable
+key, semua halaman kegiatan terkunci dan data demo tidak dimuat. Key lama
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` masih didukung untuk kompatibilitas, tetapi key
+publishable disarankan. Jangan memakai connection string PostgreSQL atau
+service-role/secret key pada variabel `NEXT_PUBLIC_*`.
 
 ## Deploy ke Vercel
 
@@ -89,7 +91,7 @@ git push origin main
   | Name | Value |
   | --- | --- |
   | `NEXT_PUBLIC_SUPABASE_URL` | Project URL dari Supabase |
-  | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon/publishable key dari Supabase |
+  | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key dari Supabase (atau legacy anon key) |
 
   Jangan masukkan password database atau service-role key. Gunakan Supabase staging
   terpisah untuk deployment **Preview**; jangan arahkan preview publik ke database
@@ -108,8 +110,9 @@ buka **Authentication → URL Configuration** pada proyek Supabase:
 
 ### 5. Periksa deployment
 
-Buka URL production dan pastikan halaman login tampil. Setelah Supabase siap, uji
-login, halaman operator, data kegiatan, dan `/verify/<user-id>`. Setiap push baru ke
+Buka URL production dan pastikan halaman login tampil. Jika Supabase belum
+dikonfigurasi, halaman kegiatan akan terkunci. Setelah koneksi siap, uji login,
+halaman operator, data kegiatan, dan `/verify/<user-id>`. Setiap push baru ke
 `main` akan memicu deployment production; branch lain menghasilkan deployment
 preview.
 
@@ -130,8 +133,8 @@ preview.
 - `/operator/publication` — atur papan skor dan akses sertifikat.
 - `/verify/[userId]` — pemeriksaan sertifikat terbit melalui Supabase atau pratinjau lokal.
 
-Mode demo menyimpan data contoh dan perubahan interaksi di `localStorage` peramban.
-Dalam mode Supabase, autentikasi dan data operasional menggunakan Supabase dengan
-kebijakan Row Level Security. Unggahan berkas memerlukan konfigurasi storage terpisah.
-QR sertifikat menuju halaman verifikasi; fingerprint tampilan bukan tanda tangan
-elektronik.
+Aplikasi memerlukan akun Supabase untuk membuka halaman kegiatan. Pendaftaran
+peserta menggunakan verifikasi email; peran petugas ditetapkan oleh operator proyek.
+Data operasional menggunakan kebijakan Row Level Security. Unggahan berkas
+memerlukan konfigurasi storage terpisah. QR sertifikat menuju halaman verifikasi;
+fingerprint tampilan bukan tanda tangan elektronik.

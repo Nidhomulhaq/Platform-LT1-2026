@@ -488,7 +488,7 @@ async function loadSupabaseWorkspace(
   userId: string | null,
 ): Promise<{ data: WorkspaceData; profile: ProfileRow | null }> {
   const supabase = getSupabaseBrowserClient();
-  if (!supabase) return { data: INITIAL_WORKSPACE_DATA, profile: null };
+  if (!supabase) return { data: EMPTY_WORKSPACE_DATA, profile: null };
 
   const [
     profileResult,
@@ -673,8 +673,6 @@ interface WorkspaceContextValue {
   setCertificatesPublished: (published: boolean) => Promise<void>;
 }
 
-const STORAGE_KEY = "lt1-islamiyah-demo-v2";
-
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 function getErrorMessage(error: unknown) {
@@ -684,9 +682,7 @@ function getErrorMessage(error: unknown) {
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const isConnected = isSupabaseConfigured();
   const supabase = getSupabaseBrowserClient();
-  const [data, setData] = useState<WorkspaceData>(
-    isConnected ? EMPTY_WORKSPACE_DATA : INITIAL_WORKSPACE_DATA,
-  );
+  const [data, setData] = useState<WorkspaceData>(EMPTY_WORKSPACE_DATA);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [authReady, setAuthReady] = useState(!isConnected);
@@ -712,29 +708,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!supabase) {
-      try {
-        const saved = window.localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved) as WorkspaceData;
-          if (
-            Array.isArray(parsed.schools) &&
-            Array.isArray(parsed.teams) &&
-            Array.isArray(parsed.scores) &&
-            Array.isArray(parsed.competitions)
-          ) {
-            setData({
-              ...INITIAL_WORKSPACE_DATA,
-              ...parsed,
-              judges: Array.isArray(parsed.judges) ? parsed.judges : [],
-              judgeAssignments: Array.isArray(parsed.judgeAssignments)
-                ? parsed.judgeAssignments
-                : [],
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Tidak dapat memuat data demo LT-1 dari penyimpanan lokal.", error);
-      }
       setAuthReady(true);
       setDataLoading(false);
       return;
@@ -750,15 +723,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, [refreshRemoteData, supabase]);
-
-  useEffect(() => {
-    if (isConnected || !authReady) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (error) {
-      console.error("Tidak dapat menyimpan data demo LT-1 ke penyimpanan lokal.", error);
-    }
-  }, [authReady, data, isConnected]);
 
   const requireClient = () => {
     if (!supabase) throw new Error("Konfigurasi Supabase belum tersedia.");
