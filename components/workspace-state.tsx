@@ -2,12 +2,16 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import type { Database } from "@/lib/supabase/database.types";
 
 export type Role = "operator" | "panitia" | "juri" | "peserta";
 export type ScoreStatus =
@@ -49,6 +53,17 @@ export interface Participant {
   isPinru: boolean;
 }
 
+export interface Judge {
+  id: string;
+  name: string;
+}
+
+export interface JudgeAssignment {
+  id: string;
+  juriId: string;
+  competitionId: string;
+}
+
 export interface ScoreRecord {
   id: string;
   competitionId: string;
@@ -67,6 +82,8 @@ export interface WorkspaceData {
   schools: School[];
   teams: Team[];
   participants: Participant[];
+  judges: Judge[];
+  judgeAssignments: JudgeAssignment[];
   competitions: Competition[];
   scores: ScoreRecord[];
   submissions: Record<string, SubmissionRecord>;
@@ -426,6 +443,8 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
   schools: schoolRecords,
   teams: teamRecords,
   participants: participantRecords,
+  judges: [],
+  judgeAssignments: [],
   competitions: COMPETITIONS,
   scores: scoreRecords,
   submissions: {
@@ -445,116 +464,545 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
   certificatesPublishedAt: null,
 };
 
+type ProfileRow = Pick<
+  Database["public"]["Tables"]["profiles"]["Row"],
+  "id" | "full_name" | "role" | "school_id"
+>;
+
+const EMPTY_WORKSPACE_DATA: WorkspaceData = {
+  schools: [],
+  teams: [],
+  participants: [],
+  judges: [],
+  judgeAssignments: [],
+  competitions: [],
+  scores: [],
+  submissions: {},
+  attendance: {},
+  leaderboardPublished: false,
+  certificatesPublished: false,
+  certificatesPublishedAt: null,
+};
+
+async function loadSupabaseWorkspace(
+  userId: string | null,
+): Promise<{ data: WorkspaceData; profile: ProfileRow | null }> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return { data: INITIAL_WORKSPACE_DATA, profile: null };
+
+  const [
+    profileResult,
+    schoolsResult,
+    teamsResult,
+    membershipsResult,
+    profilesResult,
+    judgeAssignmentsResult,
+    competitionsResult,
+    scoresResult,
+    submissionsResult,
+    attendanceResult,
+    settingsResult,
+  ] = await Promise.all([
+    userId
+      ? supabase
+          .from("profiles")
+          .select("id, full_name, role, school_id")
+          .eq("id", userId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase.from("schools").select("*").order("name"),
+    supabase.from("teams").select("*").order("name"),
+    userId
+      ? supabase.from("team_members").select("*")
+      : Promise.resolve({ data: [], error: null }),
+    userId
+      ? supabase.from("profiles").select("id, full_name, role")
+      : Promise.resolve({ data: [], error: null }),
+    userId
+      ? supabase.from("judge_assignments").select("*")
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("competitions").select("*").order("created_at"),
+    supabase.rpc("get_workspace_scores"),
+    userId
+      ? supabase.from("submissions").select("*")
+      : Promise.resolve({ data: [], error: null }),
+    userId
+      ? supabase.from("attendance").select("*")
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("event_settings").select("*").eq("id", true).maybeSingle(),
+  ]);
+  const results = [
+    profileResult,
+    schoolsResult,
+    teamsResult,
+    membershipsResult,
+    profilesResult,
+    judgeAssignmentsResult,
+    competitionsResult,
+    scoresResult,
+    submissionsResult,
+    attendanceResult,
+    settingsResult,
+  ];
+  for (const result of results) {
+    if (result.error) throw result.error;
+  }
+
+  const schoolRows = schoolsResult.data ?? [];
+  const teamRows = teamsResult.data ?? [];
+  const membershipRows = membershipsResult.data ?? [];
+  const profileRows = profilesResult.data ?? [];
+  const settings = settingsResult.data;
+  const submissionRecords: WorkspaceData["submissions"] = {};
+  for (const submission of submissionsResult.data ?? []) {
+    submissionRecords[submission.competition_id] = {
+      submitted: true,
+      url: submission.submission_url,
+    };
+  }
+
+  return {
+    profile: profileResult.data,
+    data: {
+      schools: schoolRows.map((school) => ({
+        id: school.id,
+        name: school.name,
+        schoolType: school.school_type,
+        headmasterName: school.headmaster_name,
+        headmasterTitle: school.headmaster_title,
+        pembinaName: school.pembina_name,
+        pembinaTitle: school.pembina_title,
+      })),
+      teams: teamRows.map((team) => ({
+        id: team.id,
+        name: team.name,
+        category: team.category === "putra" ? "Putra" : "Putri",
+        schoolId: team.school_id,
+      })),
+      participants: membershipRows.flatMap((membership) => {
+        const person = profileRows.find((profile) => profile.id === membership.user_id);
+        return person
+          ? [
+              {
+                id: person.id,
+                name: person.full_name,
+                teamId: membership.team_id,
+                isPinru: membership.is_pinru,
+              },
+            ]
+          : [];
+      }),
+      judges: profileRows
+        .filter((person) => person.role === "juri")
+        .map((person) => ({ id: person.id, name: person.full_name })),
+      judgeAssignments: (judgeAssignmentsResult.data ?? []).map((assignment) => ({
+        id: assignment.id,
+        juriId: assignment.juri_id,
+        competitionId: assignment.competition_id,
+      })),
+      competitions: (competitionsResult.data ?? []).map((competition) => ({
+        id: competition.id,
+        title: competition.title,
+        description: competition.description,
+        taskType: competition.task_type,
+        isActive: competition.is_active,
+      })),
+      scores: (scoresResult.data ?? []).map((score) => ({
+        id: score.id,
+        competitionId: score.competitionId,
+        teamId: score.teamId,
+        score: Number(score.score),
+        status: score.status,
+        feedback: score.feedback,
+      })),
+      submissions: submissionRecords,
+      attendance: Object.fromEntries(
+        (attendanceResult.data ?? []).map((record) => [
+          `${record.team_id}:${record.competition_id}`,
+          record.present,
+        ]),
+      ),
+      leaderboardPublished: settings?.leaderboard_published ?? false,
+      certificatesPublished: settings?.certificates_published ?? false,
+      certificatesPublishedAt: settings?.certificates_published_at ?? null,
+    },
+  };
+}
+
 interface WorkspaceContextValue {
   data: WorkspaceData;
+  isConnected: boolean;
+  authReady: boolean;
+  dataLoading: boolean;
+  dataError: string | null;
+  session: Session | null;
+  profile: ProfileRow | null;
+  currentUserId: string;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string) => Promise<boolean>;
+  signOut: () => Promise<void>;
+  createSchool: (
+    school: Omit<School, "id">,
+  ) => Promise<void>;
+  createTeam: (team: Omit<Team, "id">) => Promise<void>;
+  createCompetition: (competition: Competition) => Promise<void>;
+  assignJudge: (juriId: string, competitionId: string) => Promise<void>;
+  removeJudgeAssignment: (assignmentId: string) => Promise<void>;
   updateScore: (
     teamId: string,
     competitionId: string,
     score: number,
     feedback: string,
     status: ScoreStatus,
-  ) => void;
+  ) => Promise<void>;
   setScoreStatus: (
     scoreId: string,
     status: ScoreStatus,
     feedback?: string,
-  ) => void;
-  updateSchool: (schoolId: string, changes: Partial<School>) => void;
-  assignParticipants: (participantIds: string[], teamId: string) => void;
-  setCompetitionActive: (competitionId: string, active: boolean) => void;
-  submitWork: (competitionId: string, url: string) => void;
-  setAttendance: (teamId: string, competitionId: string, present: boolean) => void;
-  setLeaderboardPublished: (published: boolean) => void;
-  setCertificatesPublished: (published: boolean) => void;
+  ) => Promise<void>;
+  updateSchool: (schoolId: string, changes: Partial<School>) => Promise<void>;
+  assignParticipants: (participantIds: string[], teamId: string) => Promise<void>;
+  setCompetitionActive: (competitionId: string, active: boolean) => Promise<void>;
+  submitWork: (competitionId: string, url: string) => Promise<void>;
+  setAttendance: (
+    teamId: string,
+    competitionId: string,
+    present: boolean,
+  ) => Promise<void>;
+  setLeaderboardPublished: (published: boolean) => Promise<void>;
+  setCertificatesPublished: (published: boolean) => Promise<void>;
 }
 
 const STORAGE_KEY = "lt1-islamiyah-demo-v2";
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<WorkspaceData>(INITIAL_WORKSPACE_DATA);
-  const [hydrated, setHydrated] = useState(false);
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Terjadi kesalahan yang tidak diketahui.";
+}
 
-  useEffect(() => {
+export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const isConnected = isSupabaseConfigured();
+  const supabase = getSupabaseBrowserClient();
+  const [data, setData] = useState<WorkspaceData>(
+    isConnected ? EMPTY_WORKSPACE_DATA : INITIAL_WORKSPACE_DATA,
+  );
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [authReady, setAuthReady] = useState(!isConnected);
+  const [dataLoading, setDataLoading] = useState(isConnected);
+  const [dataError, setDataError] = useState<string | null>(null);
+
+  const refreshRemoteData = useCallback(async (userId: string | null) => {
+    setDataLoading(true);
+    setDataError(null);
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as WorkspaceData;
-        if (
-          Array.isArray(parsed.schools) &&
-          Array.isArray(parsed.teams) &&
-          Array.isArray(parsed.scores) &&
-          Array.isArray(parsed.competitions)
-        ) {
-          setData(parsed);
-        }
-      }
+      const loaded = await loadSupabaseWorkspace(userId);
+      setData(loaded.data);
+      setProfile(loaded.profile);
     } catch (error) {
-      console.error("Tidak dapat memuat data demo LT-1 dari penyimpanan lokal.", error);
+      console.error("Gagal memuat data LT-1 dari Supabase.", error);
+      setDataError(getErrorMessage(error));
+      setData(EMPTY_WORKSPACE_DATA);
+      setProfile(null);
+    } finally {
+      setDataLoading(false);
     }
-    setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!supabase) {
+      try {
+        const saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as WorkspaceData;
+          if (
+            Array.isArray(parsed.schools) &&
+            Array.isArray(parsed.teams) &&
+            Array.isArray(parsed.scores) &&
+            Array.isArray(parsed.competitions)
+          ) {
+            setData({
+              ...INITIAL_WORKSPACE_DATA,
+              ...parsed,
+              judges: Array.isArray(parsed.judges) ? parsed.judges : [],
+              judgeAssignments: Array.isArray(parsed.judgeAssignments)
+                ? parsed.judgeAssignments
+                : [],
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Tidak dapat memuat data demo LT-1 dari penyimpanan lokal.", error);
+      }
+      setAuthReady(true);
+      setDataLoading(false);
+      return;
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
+      void refreshRemoteData(nextSession?.user.id ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [refreshRemoteData, supabase]);
+
+  useEffect(() => {
+    if (isConnected || !authReady) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (error) {
       console.error("Tidak dapat menyimpan data demo LT-1 ke penyimpanan lokal.", error);
     }
-  }, [data, hydrated]);
+  }, [authReady, data, isConnected]);
+
+  const requireClient = () => {
+    if (!supabase) throw new Error("Konfigurasi Supabase belum tersedia.");
+    return supabase;
+  };
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       data,
-      updateScore: (teamId, competitionId, score, feedback, status) => {
+      isConnected,
+      authReady,
+      dataLoading,
+      dataError,
+      session,
+      profile,
+      currentUserId: session?.user.id ?? CURRENT_USER_ID,
+      signIn: async (email, password) => {
+        const { error } = await requireClient().auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (error) throw error;
+      },
+      signUp: async (name, email, password) => {
+        const { data: result, error } = await requireClient().auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: { full_name: name.trim() } },
+        });
+        if (error) throw error;
+        return Boolean(result.session);
+      },
+      signOut: async () => {
+        const { error } = await requireClient().auth.signOut();
+        if (error) throw error;
+      },
+      createSchool: async (school) => {
+        let nextSchool: School = { id: crypto.randomUUID(), ...school };
+        if (supabase) {
+          const { data: saved, error } = await supabase
+            .from("schools")
+            .insert({
+              name: school.name,
+              school_type: school.schoolType,
+              headmaster_name: school.headmasterName,
+              headmaster_title: school.headmasterTitle,
+              pembina_name: school.pembinaName,
+              pembina_title: school.pembinaTitle,
+            })
+            .select("*")
+            .single();
+          if (error) throw error;
+          nextSchool = {
+            id: saved.id,
+            name: saved.name,
+            schoolType: saved.school_type,
+            headmasterName: saved.headmaster_name,
+            headmasterTitle: saved.headmaster_title,
+            pembinaName: saved.pembina_name,
+            pembinaTitle: saved.pembina_title,
+          };
+        }
+        setData((current) => ({
+          ...current,
+          schools: [...current.schools, nextSchool],
+        }));
+      },
+      createTeam: async (team) => {
+        let nextTeam: Team = { id: crypto.randomUUID(), ...team };
+        if (supabase) {
+          const { data: saved, error } = await supabase
+            .from("teams")
+            .insert({
+              name: team.name,
+              category: team.category === "Putra" ? "putra" : "putri",
+              school_id: team.schoolId,
+            })
+            .select("*")
+            .single();
+          if (error) throw error;
+          nextTeam = {
+            id: saved.id,
+            name: saved.name,
+            category: saved.category === "putra" ? "Putra" : "Putri",
+            schoolId: saved.school_id,
+          };
+        }
+        setData((current) => ({
+          ...current,
+          teams: [...current.teams, nextTeam],
+        }));
+      },
+      createCompetition: async (competition) => {
+        if (supabase) {
+          const { error } = await supabase.from("competitions").insert({
+            id: competition.id,
+            title: competition.title,
+            description: competition.description,
+            task_type: competition.taskType,
+            is_active: competition.isActive,
+          });
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          competitions: [...current.competitions, competition],
+        }));
+      },
+      assignJudge: async (juriId, competitionId) => {
+        let assignment: JudgeAssignment = {
+          id: crypto.randomUUID(),
+          juriId,
+          competitionId,
+        };
+        if (supabase) {
+          const { data: saved, error } = await supabase
+            .from("judge_assignments")
+            .upsert(
+              { juri_id: juriId, competition_id: competitionId },
+              { onConflict: "juri_id,competition_id" },
+            )
+            .select("*")
+            .single();
+          if (error) throw error;
+          assignment = {
+            id: saved.id,
+            juriId: saved.juri_id,
+            competitionId: saved.competition_id,
+          };
+        }
+        setData((current) => ({
+          ...current,
+          judgeAssignments: current.judgeAssignments.some(
+            (item) =>
+              item.juriId === juriId && item.competitionId === competitionId,
+          )
+            ? current.judgeAssignments
+            : [...current.judgeAssignments, assignment],
+        }));
+      },
+      removeJudgeAssignment: async (assignmentId) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("judge_assignments")
+            .delete()
+            .eq("id", assignmentId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          judgeAssignments: current.judgeAssignments.filter(
+            (assignment) => assignment.id !== assignmentId,
+          ),
+        }));
+      },
+      updateScore: async (teamId, competitionId, score, feedback, status) => {
+        let scoreId = `score-${teamId}-${competitionId}`;
+        if (supabase && session) {
+          const { data: saved, error } = await supabase
+            .from("scores")
+            .upsert(
+              {
+                team_id: teamId,
+                competition_id: competitionId,
+                score_value: score,
+                feedback_notes: feedback,
+                status,
+                juri_id: session.user.id,
+              },
+              { onConflict: "competition_id,team_id" },
+            )
+            .select("id")
+            .single();
+          if (error) throw error;
+          scoreId = saved.id;
+        }
         setData((current) => {
-          const found = current.scores.find(
+          const existing = current.scores.find(
             (record) =>
               record.teamId === teamId && record.competitionId === competitionId,
           );
-          if (found) {
-            return {
-              ...current,
-              scores: current.scores.map((record) =>
-                record.id === found.id
-                  ? { ...record, score, feedback, status }
-                  : record,
-              ),
-            };
-          }
+          const nextRecord = {
+            id: existing?.id ?? scoreId,
+            teamId,
+            competitionId,
+            score,
+            feedback,
+            status,
+          };
           return {
             ...current,
-            scores: [
-              ...current.scores,
-              {
-                id: `score-${teamId}-${competitionId}`,
-                teamId,
-                competitionId,
-                score,
-                feedback,
-                status,
-              },
-            ],
+            scores: existing
+              ? current.scores.map((record) =>
+                  record.id === existing.id ? nextRecord : record,
+                )
+              : [...current.scores, nextRecord],
           };
         });
       },
-      setScoreStatus: (scoreId, status, feedback) => {
+      setScoreStatus: async (scoreId, status, feedback) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("scores")
+            .update({
+              status,
+              ...(feedback === undefined ? {} : { feedback_notes: feedback }),
+            })
+            .eq("id", scoreId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
         setData((current) => ({
           ...current,
           scores: current.scores.map((record) =>
             record.id === scoreId
-              ? {
-                  ...record,
-                  status,
-                  ...(feedback === undefined ? {} : { feedback }),
-                }
+              ? { ...record, status, ...(feedback === undefined ? {} : { feedback }) }
               : record,
           ),
         }));
       },
-      updateSchool: (schoolId, changes) => {
+      updateSchool: async (schoolId, changes) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("schools")
+            .update({
+              ...(changes.headmasterName === undefined
+                ? {}
+                : { headmaster_name: changes.headmasterName }),
+              ...(changes.headmasterTitle === undefined
+                ? {}
+                : { headmaster_title: changes.headmasterTitle }),
+              ...(changes.pembinaName === undefined
+                ? {}
+                : { pembina_name: changes.pembinaName }),
+              ...(changes.pembinaTitle === undefined
+                ? {}
+                : { pembina_title: changes.pembinaTitle }),
+            })
+            .eq("id", schoolId);
+          if (error) throw error;
+        }
         setData((current) => ({
           ...current,
           schools: current.schools.map((school) =>
@@ -562,7 +1010,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         }));
       },
-      assignParticipants: (participantIds, teamId) => {
+      assignParticipants: async (participantIds, teamId) => {
+        if (supabase) {
+          const memberships = participantIds.map((userId) => ({
+            user_id: userId,
+            team_id: teamId,
+            is_pinru:
+              data.participants.find((person) => person.id === userId)?.isPinru ??
+              false,
+          }));
+          const { error } = await supabase
+            .from("team_members")
+            .upsert(memberships, { onConflict: "user_id" });
+          if (error) throw error;
+        }
         setData((current) => ({
           ...current,
           participants: current.participants.map((participant) =>
@@ -572,7 +1033,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         }));
       },
-      setCompetitionActive: (competitionId, active) => {
+      setCompetitionActive: async (competitionId, active) => {
+        if (supabase) {
+          const { error } = await supabase.rpc("set_competition_active", {
+            target_competition_id: competitionId,
+            should_be_active: active,
+          });
+          if (error) throw error;
+        }
         setData((current) => ({
           ...current,
           competitions: current.competitions.map((competition) =>
@@ -582,7 +1050,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         }));
       },
-      submitWork: (competitionId, url) => {
+      submitWork: async (competitionId, url) => {
+        if (supabase) {
+          const participant = data.participants.find(
+            (person) => person.id === session?.user.id,
+          );
+          if (!participant) {
+            throw new Error("Akun ini belum dipetakan ke regu oleh operator.");
+          }
+          const { error } = await supabase.from("submissions").upsert(
+            {
+              competition_id: competitionId,
+              team_id: participant.teamId,
+              submission_url: url,
+              answers: { submission: url },
+            },
+            { onConflict: "competition_id,team_id" },
+          );
+          if (error) throw error;
+        }
         setData((current) => ({
           ...current,
           submissions: {
@@ -591,7 +1077,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           },
         }));
       },
-      setAttendance: (teamId, competitionId, present) => {
+      setAttendance: async (teamId, competitionId, present) => {
+        if (supabase && session) {
+          const { error } = await supabase.from("attendance").upsert(
+            {
+              team_id: teamId,
+              competition_id: competitionId,
+              present,
+              recorded_by: session.user.id,
+            },
+            { onConflict: "competition_id,team_id" },
+          );
+          if (error) throw error;
+        }
         setData((current) => ({
           ...current,
           attendance: {
@@ -600,18 +1098,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           },
         }));
       },
-      setLeaderboardPublished: (published) => {
+      setLeaderboardPublished: async (published) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("event_settings")
+            .update({ leaderboard_published: published })
+            .eq("id", true);
+          if (error) throw error;
+        }
         setData((current) => ({ ...current, leaderboardPublished: published }));
       },
-      setCertificatesPublished: (published) => {
+      setCertificatesPublished: async (published) => {
+        let publishedAt = published ? new Date().toISOString() : null;
+        if (supabase) {
+          const { data: savedAt, error } = await supabase.rpc(
+            "set_certificates_published",
+            { should_publish: published },
+          );
+          if (error) throw error;
+          publishedAt = savedAt;
+        }
         setData((current) => ({
           ...current,
           certificatesPublished: published,
-          certificatesPublishedAt: published ? new Date().toISOString() : null,
+          certificatesPublishedAt: publishedAt,
         }));
       },
     }),
-    [data],
+    [
+      authReady,
+      data,
+      dataError,
+      dataLoading,
+      isConnected,
+      profile,
+      session,
+      supabase,
+    ],
   );
 
   return (

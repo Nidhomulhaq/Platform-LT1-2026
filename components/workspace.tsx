@@ -55,6 +55,8 @@ import {
   type Team,
   useWorkspace,
 } from "@/components/workspace-state";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { Json } from "@/lib/supabase/database.types";
 
 type View =
   | "participant"
@@ -67,6 +69,7 @@ type View =
   | "scores"
   | "schools"
   | "teams"
+  | "competitions"
   | "publication"
   | "juri"
   | "panitia"
@@ -87,6 +90,7 @@ const viewTitles: Record<View, string> = {
   scores: "Peninjauan nilai",
   schools: "Data pangkalan",
   teams: "Manajemen regu",
+  competitions: "Mata lomba",
   publication: "Papan skor & sertifikat",
   juri: "Input nilai juri",
   panitia: "Kegiatan & kehadiran",
@@ -132,6 +136,8 @@ function IconForView({ view }: { view: View }) {
       return <Landmark {...props} />;
     case "teams":
       return <Users {...props} />;
+    case "competitions":
+      return <Flag {...props} />;
     case "publication":
       return <Flag {...props} />;
     case "juri":
@@ -256,13 +262,14 @@ function WorkspaceFrame({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data } = useWorkspace();
+  const { data, isConnected, profile, signOut } = useWorkspace();
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const role: Role =
+  const routeRole: Role =
     view === "operator" ||
     view === "scores" ||
     view === "schools" ||
     view === "teams" ||
+    view === "competitions" ||
     view === "publication"
       ? "operator"
       : view === "juri"
@@ -270,6 +277,7 @@ function WorkspaceFrame({
         : view === "panitia"
           ? "panitia"
           : "peserta";
+  const role: Role = isConnected ? profile?.role ?? "peserta" : routeRole;
 
   const roleOptions: { value: Role; label: string; path: string }[] = [
     { value: "peserta", label: "Peserta", path: "/dashboard" },
@@ -291,6 +299,11 @@ function WorkspaceFrame({
           },
           { view: "teams", label: "Regu & peserta", href: "/operator/teams" },
           { view: "schools", label: "Pangkalan", href: "/operator/schools" },
+          {
+            view: "competitions",
+            label: "Mata lomba",
+            href: "/operator/competitions",
+          },
           {
             view: "publication",
             label: "Publikasi",
@@ -407,24 +420,30 @@ function WorkspaceFrame({
             <label className="sr-only" htmlFor="role-switcher">
               Tampilan peran
             </label>
-            <select
-              id="role-switcher"
-              className="filter-select role-select"
-              aria-label="Pilih tampilan peran"
-              value={role}
-              onChange={(event) => {
-                const next = roleOptions.find(
-                  (option) => option.value === event.target.value,
-                );
-                if (next) router.push(next.path);
-              }}
-            >
-              {roleOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            {isConnected ? (
+              <span className="role-chip">
+                {roleOptions.find((option) => option.value === role)?.label}
+              </span>
+            ) : (
+              <select
+                id="role-switcher"
+                className="filter-select role-select"
+                aria-label="Pilih tampilan peran"
+                value={role}
+                onChange={(event) => {
+                  const next = roleOptions.find(
+                    (option) => option.value === event.target.value,
+                  );
+                  if (next) router.push(next.path);
+                }}
+              >
+                {roleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <button className="icon-button" aria-label="Notifikasi kegiatan">
               <Bell aria-hidden="true" />
             </button>
@@ -462,6 +481,98 @@ function WorkspaceFrame({
 
 function getTeam(data: ReturnType<typeof useWorkspace>["data"], teamId: string) {
   return data.teams.find((team) => team.id === teamId);
+}
+
+interface PublicCertificate {
+  userId: string;
+  participant: Pick<Participant, "id" | "name">;
+  team: Team;
+  school: School;
+  scores: Array<{
+    id: string;
+    competitionId: string;
+    title: string;
+    score: number;
+  }>;
+  issuedAt: string;
+}
+
+function isJsonRecord(
+  value: Json | undefined,
+): value is { [key: string]: Json | undefined } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parsePublicCertificate(value: Json): PublicCertificate | null {
+  if (!isJsonRecord(value)) return null;
+  const participant = value.participant;
+  const team = value.team;
+  const school = value.school;
+  const scoreValues = value.scores;
+  if (
+    typeof value.userId !== "string" ||
+    !isJsonRecord(participant) ||
+    typeof participant.id !== "string" ||
+    typeof participant.name !== "string" ||
+    !isJsonRecord(team) ||
+    typeof team.id !== "string" ||
+    typeof team.name !== "string" ||
+    (team.category !== "putra" && team.category !== "putri") ||
+    !isJsonRecord(school) ||
+    typeof school.id !== "string" ||
+    typeof school.name !== "string" ||
+    (school.schoolType !== "MI" && school.schoolType !== "MTs") ||
+    typeof school.headmasterName !== "string" ||
+    typeof school.headmasterTitle !== "string" ||
+    typeof school.pembinaName !== "string" ||
+    typeof school.pembinaTitle !== "string" ||
+    typeof value.issuedAt !== "string" ||
+    !Array.isArray(scoreValues)
+  ) {
+    return null;
+  }
+
+  const scores: PublicCertificate["scores"] = [];
+  for (const score of scoreValues) {
+    if (
+      !isJsonRecord(score) ||
+      typeof score.id !== "string" ||
+      typeof score.competitionId !== "string" ||
+      typeof score.title !== "string" ||
+      typeof score.score !== "number" ||
+      score.status !== "approved"
+    ) {
+      return null;
+    }
+    scores.push({
+      id: score.id,
+      competitionId: score.competitionId,
+      title: score.title,
+      score: score.score,
+    });
+  }
+
+  return {
+    userId: value.userId,
+    participant: { id: participant.id, name: participant.name },
+    team: {
+      id: team.id,
+      name: team.name,
+      category: team.category === "putra" ? "Putra" : "Putri",
+      schoolId: school.id,
+    },
+    school: {
+      id: school.id,
+      name: school.name,
+      schoolType: school.schoolType,
+      headmasterName: school.headmasterName,
+      headmasterTitle: school.headmasterTitle,
+      pembinaName: school.pembinaName,
+      pembinaTitle: school.pembinaTitle,
+    },
+    scores,
+    issuedAt: value.issuedAt,
+  };
 }
 
 function getCompetition(data: ReturnType<typeof useWorkspace>["data"], id: string) {
@@ -504,11 +615,11 @@ const badgeIcons = [Compass, Signpost, ShieldCheck, Star, BookOpen, Flag];
 const competitionIcons = [Signpost, BookOpen, ShieldCheck, FileText, Star, Flag];
 
 function ParticipantDashboard({ notify }: { notify: Notify }) {
-  const { data } = useWorkspace();
+  const { data, currentUserId, isConnected } = useWorkspace();
   const participant = data.participants.find(
-    (person) => person.id === CURRENT_PARTICIPANT_ID,
+    (person) => person.id === currentUserId,
   );
-  const currentTeamId = participant?.teamId ?? CURRENT_TEAM_ID;
+  const currentTeamId = participant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
   const team = getTeam(data, currentTeamId);
   const school = data.schools.find((item) => item.id === team?.schoolId);
   const teamScores = approvedScoresForTeam(data.scores, currentTeamId);
@@ -537,8 +648,8 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
   return (
     <>
       <PageHeading
-        title="Selamat pagi, Ahmad"
-        description="Ringkasan tugas, nilai, dan pencapaian Regu Elang."
+        title={`Selamat pagi, ${participant?.name?.split(" ")[0] ?? "Peserta"}`}
+        description={`Ringkasan tugas, nilai, dan pencapaian Regu ${team?.name ?? "Anda"}.`}
       />
       <section className="scout-banner" aria-labelledby="team-greeting">
         <div className="banner-copy">
@@ -691,6 +802,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
                   data.competitions,
                   data.scores,
                   data.certificatesPublishedAt,
+                  currentUserId,
                   notify,
                 )
               }
@@ -809,11 +921,11 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
 }
 
 function ParticipantLeaderboard() {
-  const { data } = useWorkspace();
+  const { data, currentUserId, isConnected } = useWorkspace();
   const participant = data.participants.find(
-    (person) => person.id === CURRENT_PARTICIPANT_ID,
+    (person) => person.id === currentUserId,
   );
-  const currentTeamId = participant?.teamId ?? CURRENT_TEAM_ID;
+  const currentTeamId = participant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
   const rankedTeams = data.teams
     .map((team) => {
       const school = data.schools.find((item) => item.id === team.schoolId);
@@ -885,11 +997,11 @@ function ParticipantLeaderboard() {
 }
 
 function ParticipantScoreRecap() {
-  const { data } = useWorkspace();
+  const { data, currentUserId, isConnected } = useWorkspace();
   const participant = data.participants.find(
-    (person) => person.id === CURRENT_PARTICIPANT_ID,
+    (person) => person.id === currentUserId,
   );
-  const ownTeamId = participant?.teamId ?? CURRENT_TEAM_ID;
+  const ownTeamId = participant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
   const [selectedTeamId, setSelectedTeamId] = React.useState(ownTeamId);
   const canViewAllTeams = data.leaderboardPublished;
   const team = data.teams.find((item) => item.id === selectedTeamId);
@@ -1002,14 +1114,17 @@ function ParticipantScoreRecap() {
   );
 }
 
-function ParticipantProfile() {
-  const { data } = useWorkspace();
+function ParticipantProfile({ notify }: { notify: Notify }) {
+  const { data, currentUserId, isConnected, signOut } = useWorkspace();
+  const router = useRouter();
   const participant = data.participants.find(
-    (person) => person.id === CURRENT_PARTICIPANT_ID,
+    (person) => person.id === currentUserId,
   );
   const team = participant
     ? getTeam(data, participant.teamId)
-    : getTeam(data, CURRENT_TEAM_ID);
+    : isConnected
+      ? undefined
+      : getTeam(data, CURRENT_TEAM_ID);
   const school = data.schools.find((item) => item.id === team?.schoolId);
   const initials = (participant?.name ?? "Peserta")
     .split(/\s+/)
@@ -1053,13 +1168,29 @@ function ParticipantProfile() {
           </div>
         </dl>
         <div className="participant-profile-actions">
-          <Link className="button button-secondary" href="/verify/lt1-2026-001">
+          <Link className="button button-secondary" href={`/verify/${currentUserId}`}>
             <ShieldCheck aria-hidden="true" />
             Verifikasi sertifikat
           </Link>
-          <Link className="text-link" href="/login">
-            Keluar dari pratinjau <ArrowRight aria-hidden="true" />
-          </Link>
+          {isConnected ? (
+            <button
+              className="text-link participant-signout"
+              onClick={() => {
+                void signOut()
+                  .then(() => router.replace("/login"))
+                  .catch((error: unknown) => {
+                    console.error("Gagal keluar dari sesi Supabase.", error);
+                    notify("Tidak dapat mengakhiri sesi. Coba lagi.", true);
+                  });
+              }}
+            >
+              Keluar <ArrowRight aria-hidden="true" />
+            </button>
+          ) : (
+            <Link className="text-link" href="/login">
+              Keluar dari pratinjau <ArrowRight aria-hidden="true" />
+            </Link>
+          )}
         </div>
         <p className="inline-note">
           Profil ini menggunakan data contoh. Pengaturan akun belum tersambung ke layanan autentikasi.
@@ -1332,6 +1463,7 @@ async function downloadCertificate(
   competitions: Competition[],
   scores: ScoreRecord[],
   issuedAt: string | null,
+  userId: string,
   notify: Notify,
 ) {
   if (!participant || !team || !school) {
@@ -1346,7 +1478,7 @@ async function downloadCertificate(
     return;
   }
   try {
-    const verifyUrl = `${window.location.origin}/verify/${CURRENT_USER_ID}`;
+    const verifyUrl = `${window.location.origin}/verify/${userId}`;
     const qrSvg = await QRCode.toString(verifyUrl, {
       type: "svg",
       width: 144,
@@ -1614,22 +1746,37 @@ function OperatorScores({ notify }: { notify: Notify }) {
     return matchesFilter && matchesSearch;
   });
 
-  const approve = (score: ScoreRecord) => {
-    setScoreStatus(score.id, "approved");
+  const approve = async (score: ScoreRecord) => {
     const team = getTeam(data, score.teamId);
     const competition = getCompetition(data, score.competitionId);
-    notify(`Nilai ${team?.name ?? ""} untuk ${competition?.title ?? ""} disahkan.`);
+    try {
+      await setScoreStatus(score.id, "approved");
+      notify(`Nilai ${team?.name ?? ""} untuk ${competition?.title ?? ""} disahkan.`);
+    } catch (error) {
+      console.error("Gagal mengesahkan nilai.", error);
+      notify("Nilai gagal disahkan. Periksa akses dan koneksi Supabase.", true);
+    }
   };
 
-  const requestRevision = () => {
+  const requestRevision = async () => {
     if (!revisionTarget || !revisionNote.trim()) return;
     setBusy(true);
-    setScoreStatus(revisionTarget.id, "revision_needed", revisionNote.trim());
-    const team = getTeam(data, revisionTarget.teamId);
-    setRevisionTarget(null);
-    setRevisionNote("");
-    setBusy(false);
-    notify(`Revisi dikirim ke ${team?.name ?? "regu"} beserta catatan juri.`);
+    try {
+      await setScoreStatus(
+        revisionTarget.id,
+        "revision_needed",
+        revisionNote.trim(),
+      );
+      const team = getTeam(data, revisionTarget.teamId);
+      setRevisionTarget(null);
+      setRevisionNote("");
+      notify(`Revisi dikirim ke ${team?.name ?? "regu"} beserta catatan juri.`);
+    } catch (error) {
+      console.error("Gagal mengirim permintaan revisi nilai.", error);
+      notify("Permintaan revisi gagal disimpan.", true);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const filterOptions: { value: ScoreStatus | "all"; label: string }[] = [
@@ -1815,7 +1962,15 @@ function OperatorScores({ notify }: { notify: Notify }) {
 }
 
 function SchoolManagement({ notify }: { notify: Notify }) {
-  const { data, updateSchool } = useWorkspace();
+  const { data, updateSchool, createSchool, isConnected } = useWorkspace();
+  const [schoolDrafts, setSchoolDrafts] = React.useState<
+    Record<string, Partial<School>>
+  >({});
+  const [newSchoolName, setNewSchoolName] = React.useState("");
+  const [newSchoolType, setNewSchoolType] = React.useState<School["schoolType"]>("MI");
+  const [newHeadmaster, setNewHeadmaster] = React.useState("");
+  const [newPembina, setNewPembina] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
   const fieldConfig: {
     field: keyof School;
     label: string;
@@ -1835,10 +1990,88 @@ function SchoolManagement({ notify }: { notify: Notify }) {
       <div className="notice" role="note">
         <CircleHelp aria-hidden="true" />
         <p>
-          Perubahan tersimpan di peramban ini sebagai data demo. Sambungkan ke
-          Supabase sebelum digunakan pada kegiatan sebenarnya.
+          {isConnected
+            ? "Perubahan penandatangan disimpan ke basis data kegiatan."
+            : "Perubahan tersimpan di peramban ini sebagai data demo."}
         </p>
       </div>
+      <section className="panel panel-pad" style={{ marginTop: 16 }}>
+        <SectionHeading
+          title="Tambah pangkalan"
+          detail="Daftarkan sekolah sebelum membuat regu."
+        />
+        <form
+          className="form-stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setCreating(true);
+            void createSchool({
+              name: newSchoolName.trim(),
+              schoolType: newSchoolType,
+              headmasterName: newHeadmaster.trim(),
+              headmasterTitle: "Kepala Madrasah / Ka Mabigus",
+              pembinaName: newPembina.trim(),
+              pembinaTitle: "Pembina Pramuka",
+            })
+              .then(() => {
+                setNewSchoolName("");
+                setNewHeadmaster("");
+                setNewPembina("");
+                notify("Pangkalan berhasil ditambahkan.");
+              })
+              .catch((error: unknown) => {
+                console.error("Gagal menambahkan pangkalan.", error);
+                notify("Pangkalan gagal ditambahkan.", true);
+              })
+              .finally(() => setCreating(false));
+          }}
+        >
+          <div className="school-fields">
+            <label>
+              <span className="field-label">Nama pangkalan</span>
+              <input
+                className="field"
+                value={newSchoolName}
+                onChange={(event) => setNewSchoolName(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              <span className="field-label">Jenjang</span>
+              <select
+                className="field"
+                value={newSchoolType}
+                onChange={(event) =>
+                  setNewSchoolType(event.target.value as School["schoolType"])
+                }
+              >
+                <option value="MI">MI</option>
+                <option value="MTs">MTs</option>
+              </select>
+            </label>
+            <label>
+              <span className="field-label">Kepala madrasah / Ka Mabigus</span>
+              <input
+                className="field"
+                value={newHeadmaster}
+                onChange={(event) => setNewHeadmaster(event.target.value)}
+              />
+            </label>
+            <label>
+              <span className="field-label">Pembina pramuka</span>
+              <input
+                className="field"
+                value={newPembina}
+                onChange={(event) => setNewPembina(event.target.value)}
+              />
+            </label>
+          </div>
+          <button className="button button-small" type="submit" disabled={creating}>
+            {creating ? "Menyimpan…" : "Tambah pangkalan"}
+          </button>
+        </form>
+      </section>
+      {data.schools.length ? (
       <div className="school-stack" style={{ marginTop: 16 }}>
         {data.schools.map((school) => {
           const teamCount = data.teams.filter(
@@ -1867,11 +2100,15 @@ function SchoolManagement({ notify }: { notify: Notify }) {
                     <span className="field-label">{label}</span>
                     <input
                       className="field"
-                      value={school[field]}
+                      value={schoolDrafts[school.id]?.[field] ?? school[field]}
                       onChange={(event) =>
-                        updateSchool(school.id, {
-                          [field]: event.target.value,
-                        } as Partial<School>)
+                        setSchoolDrafts((drafts) => ({
+                          ...drafts,
+                          [school.id]: {
+                            ...drafts[school.id],
+                            [field]: event.target.value,
+                          },
+                        }))
                       }
                     />
                   </label>
@@ -1880,15 +2117,52 @@ function SchoolManagement({ notify }: { notify: Notify }) {
               <p className="field-hint">
                 Perubahan data penandatangan akan digunakan pada sertifikat baru.
               </p>
+              <button
+                className="button button-secondary button-small"
+                onClick={() => {
+                  void updateSchool(school.id, schoolDrafts[school.id] ?? {})
+                    .then(() => {
+                      setSchoolDrafts((drafts) => {
+                        const next = { ...drafts };
+                        delete next[school.id];
+                        return next;
+                      });
+                      notify(`Data ${school.name} berhasil disimpan.`);
+                    })
+                    .catch((error: unknown) => {
+                      console.error("Gagal menyimpan data pangkalan.", error);
+                      notify("Data pangkalan gagal disimpan.", true);
+                    });
+                }}
+                disabled={!schoolDrafts[school.id]}
+              >
+                <Check aria-hidden="true" />
+                Simpan pangkalan
+              </button>
             </section>
           );
         })}
       </div>
+      ) : (
+        <div className="empty-state">
+          <Landmark aria-hidden="true" />
+          <strong>Belum ada pangkalan</strong>
+          <p>Tambahkan pangkalan untuk mulai membentuk regu.</p>
+        </div>
+      )}
       <div className="form-footer">
-        <p className="inline-note">Data tersimpan otomatis di peramban.</p>
+        <p className="inline-note">
+          {isConnected ? "Data disimpan di Supabase." : "Data tersimpan di peramban."}
+        </p>
         <button
           className="button button-secondary"
-          onClick={() => notify("Perubahan data pangkalan tersimpan di peramban ini.")}
+          onClick={() =>
+            notify(
+              isConnected
+                ? "Periksa status simpan pada setiap pangkalan."
+                : "Perubahan data pangkalan tersimpan di peramban ini.",
+            )
+          }
         >
           <Check aria-hidden="true" />
           Selesai
@@ -1899,14 +2173,29 @@ function SchoolManagement({ notify }: { notify: Notify }) {
 }
 
 function JuryScoring({ notify }: { notify: Notify }) {
-  const { data, updateScore } = useWorkspace();
+  const { data, currentUserId, isConnected, updateScore } = useWorkspace();
+  const judgeCompetitions = isConnected
+    ? data.competitions.filter((competition) =>
+        data.judgeAssignments.some(
+          (assignment) =>
+            assignment.juriId === currentUserId &&
+            assignment.competitionId === competition.id,
+        ),
+      )
+    : data.competitions;
   const [competitionId, setCompetitionId] = React.useState(
-    data.competitions[0]?.id ?? "",
+    judgeCompetitions[0]?.id ?? "",
   );
   const [scoreDrafts, setScoreDrafts] = React.useState<
     Record<string, { score: string; feedback: string }>
   >({});
-  const competition = getCompetition(data, competitionId);
+  React.useEffect(() => {
+    if (!judgeCompetitions.some((item) => item.id === competitionId)) {
+      setCompetitionId(judgeCompetitions[0]?.id ?? "");
+      setScoreDrafts({});
+    }
+  }, [competitionId, judgeCompetitions]);
+  const competition = judgeCompetitions.find((item) => item.id === competitionId);
 
   const draftFor = (teamId: string) => {
     const saved = getScore(data.scores, teamId, competitionId);
@@ -1932,19 +2221,24 @@ function JuryScoring({ notify }: { notify: Notify }) {
     }));
   };
 
-  const save = (teamId: string, status: ScoreStatus) => {
+  const save = async (teamId: string, status: ScoreStatus) => {
     const draft = draftFor(teamId);
     const value = Number(draft.score);
     if (!Number.isFinite(value) || value < 0 || value > 100) {
       notify("Masukkan nilai antara 0 sampai 100.", true);
       return;
     }
-    updateScore(teamId, competitionId, value, draft.feedback.trim(), status);
-    notify(
-      status === "pending_review"
-        ? "Nilai dikirim ke operator untuk ditinjau."
-        : "Draf nilai berhasil disimpan.",
-    );
+    try {
+      await updateScore(teamId, competitionId, value, draft.feedback.trim(), status);
+      notify(
+        status === "pending_review"
+          ? "Nilai dikirim ke operator untuk ditinjau."
+          : "Draf nilai berhasil disimpan.",
+      );
+    } catch (error) {
+      console.error("Gagal menyimpan nilai juri.", error);
+      notify("Nilai gagal disimpan. Pastikan Anda ditugaskan pada mata lomba ini.", true);
+    }
   };
 
   const selectedScores = data.scores.filter(
@@ -1953,6 +2247,22 @@ function JuryScoring({ notify }: { notify: Notify }) {
   const pendingCount = selectedScores.filter(
     (score) => score.status === "pending_review",
   ).length;
+
+  if (!judgeCompetitions.length) {
+    return (
+      <>
+        <PageHeading
+          title="Input nilai"
+          description="Simpan draf atau kirim hasil penilaian regu ke operator."
+        />
+        <div className="empty-state">
+          <ClipboardCheck aria-hidden="true" />
+          <strong>Belum ada mata lomba yang ditugaskan</strong>
+          <p>Minta operator menetapkan mata lomba untuk akun juri ini.</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -1974,7 +2284,7 @@ function JuryScoring({ notify }: { notify: Notify }) {
               setScoreDrafts({});
             }}
           >
-            {data.competitions.map((item) => (
+            {judgeCompetitions.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.title}
               </option>
@@ -2068,14 +2378,14 @@ function JuryScoring({ notify }: { notify: Notify }) {
                         <button
                           className="button button-secondary button-small"
                           disabled={disabled}
-                          onClick={() => save(team.id, "draft")}
+                          onClick={() => void save(team.id, "draft")}
                         >
                           Simpan
                         </button>
                         <button
                           className="button button-small"
                           disabled={disabled}
-                          onClick={() => save(team.id, "pending_review")}
+                          onClick={() => void save(team.id, "pending_review")}
                         >
                           <Send aria-hidden="true" />
                           Kirim
@@ -2097,10 +2407,12 @@ function SwitchControl({
   checked,
   label,
   onChange,
+  disabled = false,
 }: {
   checked: boolean;
   label: string;
   onChange: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -2109,23 +2421,304 @@ function SwitchControl({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={onChange}
     />
   );
 }
 
-function PublicationSettings() {
+function CompetitionManagement({ notify }: { notify: Notify }) {
+  const { data, createCompetition, assignJudge, removeJudgeAssignment } =
+    useWorkspace();
+  const [competitionId, setCompetitionId] = React.useState("");
+  const [title, setTitle] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [selectedJudges, setSelectedJudges] = React.useState<
+    Record<string, string>
+  >({});
+  const [taskType, setTaskType] =
+    React.useState<Competition["taskType"]>("live");
+  const [creating, setCreating] = React.useState(false);
+  const [assignmentBusy, setAssignmentBusy] = React.useState(false);
+
+  const updateTitle = (value: string) => {
+    setTitle(value);
+    setCompetitionId(
+      value
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, ""),
+    );
+  };
+
+  return (
+    <>
+      <PageHeading
+        title="Mata lomba"
+        description="Siapkan pos dan tugas sebelum peserta mulai mengerjakan."
+      />
+      <section className="panel panel-pad">
+        <SectionHeading
+          title="Tambah mata lomba"
+          detail="ID akan menjadi bagian dari tautan tugas dan kode QR."
+        />
+        <form
+          className="form-stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setCreating(true);
+            void createCompetition({
+              id: competitionId,
+              title: title.trim(),
+              description: description.trim(),
+              taskType,
+              isActive: false,
+            })
+              .then(() => {
+                setCompetitionId("");
+                setTitle("");
+                setDescription("");
+                notify("Mata lomba berhasil ditambahkan dalam status belum dirilis.");
+              })
+              .catch((error: unknown) => {
+                console.error("Gagal menambahkan mata lomba.", error);
+                notify("Mata lomba gagal ditambahkan. Periksa ID yang digunakan.", true);
+              })
+              .finally(() => setCreating(false));
+          }}
+        >
+          <div className="school-fields">
+            <label>
+              <span className="field-label">Nama mata lomba</span>
+              <input
+                className="field"
+                value={title}
+                onChange={(event) => updateTitle(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              <span className="field-label">ID tautan / QR</span>
+              <input
+                className="field"
+                value={competitionId}
+                onChange={(event) => setCompetitionId(event.target.value)}
+                pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                title="Gunakan huruf kecil, angka, dan tanda hubung."
+                required
+              />
+            </label>
+            <label>
+              <span className="field-label">Jenis tugas</span>
+              <select
+                className="field"
+                value={taskType}
+                onChange={(event) =>
+                  setTaskType(event.target.value as Competition["taskType"])
+                }
+              >
+                <option value="live">Penilaian langsung</option>
+                <option value="cbt">Tes berbasis komputer</option>
+                <option value="upload">Unggah berkas / tautan</option>
+              </select>
+            </label>
+            <label>
+              <span className="field-label">Petunjuk singkat</span>
+              <input
+                className="field"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+              />
+            </label>
+          </div>
+          <button className="button button-small" type="submit" disabled={creating}>
+            {creating ? "Menyimpan…" : "Tambah mata lomba"}
+          </button>
+        </form>
+      </section>
+      <section className="panel panel-pad" style={{ marginTop: 18 }}>
+        <SectionHeading
+          title="Daftar mata lomba"
+          detail={`${data.competitions.length} mata lomba`}
+        />
+        {data.competitions.length ? (
+          <div className="activity-list">
+            {data.competitions.map((competition) => (
+              <div className="activity-row" key={competition.id}>
+                <span className="activity-copy">
+                  <strong>{competition.title}</strong>
+                  <span>
+                    {competition.id} ·{" "}
+                    {competition.taskType === "live"
+                      ? "Langsung"
+                      : competition.taskType === "cbt"
+                        ? "CBT"
+                        : "Unggah"}
+                  </span>
+                </span>
+                <span
+                  className={`status-pill${competition.isActive ? " is-approved" : ""}`}
+                >
+                  {competition.isActive ? "Dirilis" : "Belum dirilis"}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <Flag aria-hidden="true" />
+            <strong>Belum ada mata lomba</strong>
+            <p>Tambahkan mata lomba untuk mulai menyiapkan kegiatan.</p>
+          </div>
+        )}
+      </section>
+      <section className="panel panel-pad" style={{ marginTop: 18 }}>
+        <SectionHeading
+          title="Penugasan juri"
+          detail="Tentukan mata lomba yang dapat dinilai setiap juri."
+        />
+        {!data.judges.length ? (
+          <div className="empty-state">
+            <Users aria-hidden="true" />
+            <strong>Belum ada akun juri</strong>
+            <p>
+              Daftarkan akun, lalu tetapkan rolenya sebagai juri melalui SQL
+              Editor Supabase.
+            </p>
+          </div>
+        ) : !data.competitions.length ? (
+          <p className="inline-note">
+            Tambahkan mata lomba sebelum menetapkan juri.
+          </p>
+        ) : (
+          <div className="activity-list">
+            {data.competitions.map((competition) => {
+              const assigned = data.judgeAssignments.filter(
+                (assignment) => assignment.competitionId === competition.id,
+              );
+              const assignedIds = new Set(assigned.map((item) => item.juriId));
+              const availableJudges = data.judges.filter(
+                (judge) => !assignedIds.has(judge.id),
+              );
+              const selectedJudge = availableJudges.some(
+                (judge) => judge.id === selectedJudges[competition.id],
+              )
+                ? selectedJudges[competition.id]
+                : (availableJudges[0]?.id ?? "");
+              return (
+                <div className="activity-row" key={competition.id}>
+                  <span className="activity-copy">
+                    <strong>{competition.title}</strong>
+                    <span>
+                      {assigned.length
+                        ? assigned
+                            .map(
+                              (assignment) =>
+                                data.judges.find(
+                                  (judge) => judge.id === assignment.juriId,
+                                )?.name,
+                            )
+                            .filter(Boolean)
+                            .join(", ")
+                        : "Belum ada juri yang ditugaskan"}
+                    </span>
+                    {assigned.map((assignment) => {
+                      const judge = data.judges.find(
+                        (item) => item.id === assignment.juriId,
+                      );
+                      return (
+                        <button
+                          className="text-link"
+                          disabled={assignmentBusy}
+                          key={assignment.id}
+                          onClick={() => {
+                            setAssignmentBusy(true);
+                            void removeJudgeAssignment(assignment.id)
+                              .then(() =>
+                                notify(
+                                  `Penugasan ${judge?.name ?? "juri"} dihapus.`,
+                                ),
+                              )
+                              .catch((error: unknown) => {
+                                console.error("Gagal menghapus penugasan juri.", error);
+                                notify("Penugasan juri gagal dihapus.", true);
+                              })
+                              .finally(() => setAssignmentBusy(false));
+                          }}
+                        >
+                          Hapus {judge?.name ?? "juri"}
+                        </button>
+                      );
+                    })}
+                  </span>
+                  <div className="form-row">
+                    <select
+                      aria-label={`Pilih juri untuk ${competition.title}`}
+                      className="field"
+                      disabled={!availableJudges.length || assignmentBusy}
+                      value={selectedJudge}
+                      onChange={(event) =>
+                        setSelectedJudges((current) => ({
+                          ...current,
+                          [competition.id]: event.target.value,
+                        }))
+                      }
+                    >
+                      {availableJudges.length ? (
+                        availableJudges.map((judge) => (
+                          <option key={judge.id} value={judge.id}>
+                            {judge.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">Semua juri sudah ditugaskan</option>
+                      )}
+                    </select>
+                    <button
+                      className="button button-small"
+                      disabled={!selectedJudge || assignmentBusy}
+                      onClick={() => {
+                        setAssignmentBusy(true);
+                        void assignJudge(selectedJudge, competition.id)
+                          .then(() => notify("Juri berhasil ditugaskan."))
+                          .catch((error: unknown) => {
+                            console.error("Gagal menetapkan juri.", error);
+                            notify("Juri gagal ditugaskan.", true);
+                          })
+                          .finally(() => setAssignmentBusy(false));
+                      }}
+                    >
+                      Tugaskan
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function PublicationSettings({ notify }: { notify: Notify }) {
   const {
     data,
     setLeaderboardPublished,
     setCertificatesPublished,
   } = useWorkspace();
-  const allApproved = data.teams.every((team) =>
-    data.competitions.every(
-      (competition) =>
-        getScore(data.scores, team.id, competition.id)?.status === "approved",
-    ),
-  );
+  const allApproved =
+    data.teams.length > 0 &&
+    data.competitions.length > 0 &&
+    data.teams.every((team) =>
+      data.competitions.every(
+        (competition) =>
+          getScore(data.scores, team.id, competition.id)?.status === "approved",
+      ),
+    );
   return (
     <>
       <PageHeading
@@ -2150,9 +2743,14 @@ function PublicationSettings() {
             <SwitchControl
               checked={data.leaderboardPublished}
               label="Rilis papan skor publik"
-              onChange={() =>
-                setLeaderboardPublished(!data.leaderboardPublished)
-              }
+              onChange={() => {
+                void setLeaderboardPublished(!data.leaderboardPublished)
+                  .then(() => notify("Pengaturan leaderboard berhasil disimpan."))
+                  .catch((error: unknown) => {
+                    console.error("Gagal mengubah publikasi leaderboard.", error);
+                    notify("Pengaturan leaderboard gagal disimpan.", true);
+                  });
+              }}
             />
           </div>
           <div className="toggle-row">
@@ -2167,9 +2765,15 @@ function PublicationSettings() {
             <SwitchControl
               checked={data.certificatesPublished}
               label="Buka unduhan sertifikat"
-              onChange={() =>
-                setCertificatesPublished(!data.certificatesPublished)
-              }
+              disabled={!allApproved && !data.certificatesPublished}
+              onChange={() => {
+                void setCertificatesPublished(!data.certificatesPublished)
+                  .then(() => notify("Pengaturan sertifikat berhasil disimpan."))
+                  .catch((error: unknown) => {
+                    console.error("Gagal mengubah publikasi sertifikat.", error);
+                    notify("Pengaturan sertifikat gagal disimpan.", true);
+                  });
+              }}
             />
           </div>
         </section>
@@ -2226,9 +2830,16 @@ function PublicationSettings() {
 }
 
 function TeamManagement({ notify }: { notify: Notify }) {
-  const { data, assignParticipants } = useWorkspace();
+  const { data, assignParticipants, createTeam } = useWorkspace();
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [targetTeam, setTargetTeam] = React.useState(data.teams[0]?.id ?? "");
+  const [newTeamName, setNewTeamName] = React.useState("");
+  const [newTeamCategory, setNewTeamCategory] =
+    React.useState<Team["category"]>("Putra");
+  const [newTeamSchool, setNewTeamSchool] = React.useState(
+    data.schools[0]?.id ?? "",
+  );
+  const [creating, setCreating] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const visibleParticipants = data.participants.filter((participant) => {
     const team = getTeam(data, participant.teamId);
@@ -2259,14 +2870,19 @@ function TeamManagement({ notify }: { notify: Notify }) {
     }
   };
 
-  const assign = () => {
+  const assign = async () => {
     if (!selectedIds.length) {
       notify("Pilih minimal satu peserta untuk dipetakan.", true);
       return;
     }
-    assignParticipants(selectedIds, targetTeam);
-    notify(`${selectedIds.length} peserta dipetakan ke Regu ${getTeam(data, targetTeam)?.name}.`);
-    setSelectedIds([]);
+    try {
+      await assignParticipants(selectedIds, targetTeam);
+      notify(`${selectedIds.length} peserta dipetakan ke Regu ${getTeam(data, targetTeam)?.name}.`);
+      setSelectedIds([]);
+    } catch (error) {
+      console.error("Gagal memetakan peserta ke regu.", error);
+      notify("Pemetaan peserta gagal disimpan.", true);
+    }
   };
 
   return (
@@ -2283,6 +2899,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
               id="target-team"
               className="filter-select"
               value={targetTeam}
+              disabled={!data.teams.length}
               onChange={(event) => setTargetTeam(event.target.value)}
             >
               {data.teams.map((team) => (
@@ -2294,13 +2911,86 @@ function TeamManagement({ notify }: { notify: Notify }) {
             <button
               className="button button-small"
               disabled={!selectedIds.length}
-              onClick={assign}
+              onClick={() => void assign()}
             >
               Petakan {selectedIds.length || ""}
             </button>
           </>
         }
       />
+      <section className="panel panel-pad" style={{ marginBottom: 18 }}>
+        <SectionHeading
+          title="Tambah regu"
+          detail="Pilih pangkalan dan kategori untuk regu baru."
+        />
+        {data.schools.length ? (
+          <form
+            className="form-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setCreating(true);
+              void createTeam({
+                name: newTeamName.trim(),
+                category: newTeamCategory,
+                schoolId: newTeamSchool,
+              })
+                .then(() => {
+                  setNewTeamName("");
+                  notify("Regu berhasil ditambahkan.");
+                })
+                .catch((error: unknown) => {
+                  console.error("Gagal menambahkan regu.", error);
+                  notify("Regu gagal ditambahkan.", true);
+                })
+                .finally(() => setCreating(false));
+            }}
+          >
+            <label>
+              <span className="field-label">Nama regu</span>
+              <input
+                className="field"
+                value={newTeamName}
+                onChange={(event) => setNewTeamName(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              <span className="field-label">Kategori</span>
+              <select
+                className="field"
+                value={newTeamCategory}
+                onChange={(event) =>
+                  setNewTeamCategory(event.target.value as Team["category"])
+                }
+              >
+                <option value="Putra">Putra</option>
+                <option value="Putri">Putri</option>
+              </select>
+            </label>
+            <label>
+              <span className="field-label">Pangkalan</span>
+              <select
+                className="field"
+                value={newTeamSchool}
+                onChange={(event) => setNewTeamSchool(event.target.value)}
+              >
+                {data.schools.map((school) => (
+                  <option value={school.id} key={school.id}>
+                    {school.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="button button-small" type="submit" disabled={creating}>
+              {creating ? "Menyimpan…" : "Tambah regu"}
+            </button>
+          </form>
+        ) : (
+          <p className="inline-note">
+            Tambahkan pangkalan terlebih dahulu pada menu Pangkalan.
+          </p>
+        )}
+      </section>
       <div className="filter-row">
         <div className="search-control">
           <Search aria-hidden="true" />
@@ -2377,7 +3067,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
 }
 
 function EventCoordination({ notify }: { notify: Notify }) {
-      const { data, setAttendance, setCompetitionActive } = useWorkspace();
+      const { data, setAttendance, setCompetitionActive, isConnected } = useWorkspace();
       const [competitionId, setCompetitionId] = React.useState(
         data.competitions[0]?.id ?? "",
       );
@@ -2385,6 +3075,32 @@ function EventCoordination({ notify }: { notify: Notify }) {
       const attendedCount = data.teams.filter(
         (team) => data.attendance[`${team.id}:${competitionId}`],
       ).length;
+      const updateCompetitionState = async () => {
+        if (!competition) return;
+        try {
+          await setCompetitionActive(competition.id, !competition.isActive);
+          notify(
+            competition.isActive
+              ? `${competition.title} dihentikan.`
+              : `${competition.title} dirilis untuk peserta.`,
+          );
+        } catch (error) {
+          console.error("Gagal mengubah status mata lomba.", error);
+          notify("Status mata lomba gagal disimpan.", true);
+        }
+      };
+      const toggleAttendance = async (
+        teamId: string,
+        present: boolean,
+        teamName: string,
+      ) => {
+        try {
+          await setAttendance(teamId, competitionId, !present);
+        } catch (error) {
+          console.error("Gagal menyimpan kehadiran regu.", error);
+          notify(`Kehadiran Regu ${teamName} gagal disimpan.`, true);
+        }
+      };
 
       return (
         <>
@@ -2412,14 +3128,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
               {competition ? (
                 <button
                   className={`button button-small${competition.isActive ? " button-secondary" : ""}`}
-                  onClick={() => {
-                    setCompetitionActive(competition.id, !competition.isActive);
-                    notify(
-                      competition.isActive
-                        ? `${competition.title} dihentikan.`
-                        : `${competition.title} dirilis untuk peserta.`,
-                    );
-                  }}
+                  onClick={() => void updateCompetitionState()}
                 >
                   <Flag aria-hidden="true" />
                   {competition.isActive ? "Tugas dirilis" : "Rilis tugas"}
@@ -2435,13 +3144,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
                 </span>
               }
             />
-            <div className="notice" role="note">
-              <CircleHelp aria-hidden="true" />
-              <p>
-                Status kehadiran disimpan pada perangkat ini selama pratinjau. Data
-              absensi kegiatan belum dikirim ke basis data.
-              </p>
-            </div>
+            {!isConnected ? (
+              <div className="notice" role="note">
+                <CircleHelp aria-hidden="true" />
+                <p>
+                  Status kehadiran disimpan pada perangkat ini selama pratinjau.
+                  Data absensi belum dikirim ke basis data.
+                </p>
+              </div>
+            ) : null}
             <div className="activity-list" style={{ marginTop: 10 }}>
               {data.teams.map((team) => {
                 const present = Boolean(
@@ -2472,7 +3183,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
                       <button
                         className={`button button-small${present ? " button-secondary" : ""}`}
                         onClick={() =>
-                          setAttendance(team.id, competitionId, !present)
+                          void toggleAttendance(team.id, present, team.name)
                         }
                         aria-label={`${present ? "Batalkan kehadiran" : "Catat kehadiran"} Regu ${team.name}`}
                       >
@@ -2495,12 +3206,13 @@ function EventCoordination({ notify }: { notify: Notify }) {
       competitionId: string;
       notify: Notify;
     }) {
-      const { data, submitWork } = useWorkspace();
+      const { data, submitWork, currentUserId, isConnected } = useWorkspace();
       const router = useRouter();
       const currentParticipant = data.participants.find(
-        (person) => person.id === CURRENT_PARTICIPANT_ID,
+        (person) => person.id === currentUserId,
       );
-      const currentTeamId = currentParticipant?.teamId ?? CURRENT_TEAM_ID;
+      const currentTeamId =
+        currentParticipant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
       const competition = getCompetition(data, competitionId);
       const [url, setUrl] = React.useState(
         data.submissions[competitionId]?.url ?? "",
@@ -2524,7 +3236,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
         );
       }
 
-      const submit = (event: React.FormEvent<HTMLFormElement>) => {
+      const submit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!competition.isActive) {
           notify("Tugas ini belum dirilis panitia.", true);
@@ -2542,8 +3254,20 @@ function EventCoordination({ notify }: { notify: Notify }) {
           competition.taskType === "cbt"
             ? `cbt:${Object.keys(answers).length}-jawaban`
             : url.trim() || `demo-file:${fileName}`;
-        submitWork(competition.id, savedValue);
-        notify("Tugas berhasil dikirim pada data demo.");
+        try {
+          await submitWork(competition.id, savedValue);
+          notify(
+            isConnected
+              ? "Tugas berhasil dikirim ke basis data kegiatan."
+              : "Tugas berhasil dikirim pada data demo.",
+          );
+        } catch (error) {
+          console.error("Gagal mengirim tugas peserta.", error);
+          notify(
+            error instanceof Error ? error.message : "Tugas gagal dikirim.",
+            true,
+          );
+        }
       };
 
       const taskTypeCopy: Record<Competition["taskType"], string> = {
@@ -2686,8 +3410,18 @@ function EventCoordination({ notify }: { notify: Notify }) {
                       className="button button-secondary"
                       onClick={() => {
                         if (data.attendance[`${currentTeamId}:${competition.id}`]) {
-                          submitWork(competition.id, "pos:hadir");
-                          notify("Kehadiran regu dikonfirmasi pada pratinjau.");
+                          void submitWork(competition.id, "pos:hadir")
+                            .then(() =>
+                              notify(
+                                isConnected
+                                  ? "Kehadiran regu berhasil dikonfirmasi."
+                                  : "Kehadiran regu dikonfirmasi pada pratinjau.",
+                              ),
+                            )
+                            .catch((error: unknown) => {
+                              console.error("Gagal mengonfirmasi kehadiran regu.", error);
+                              notify("Kehadiran regu gagal dikonfirmasi.", true);
+                            });
                         } else {
                           notify("Panitia perlu mencatat kehadiran regumu terlebih dahulu.", true);
                         }
@@ -2766,21 +3500,45 @@ function EventCoordination({ notify }: { notify: Notify }) {
     }
 
     function VerificationPage({ userId }: { userId: string }) {
-      const { data } = useWorkspace();
-      const participant = data.participants.find(
+      const { data, isConnected } = useWorkspace();
+      const [certificate, setCertificate] =
+        React.useState<PublicCertificate | null>(null);
+      const [verificationState, setVerificationState] = React.useState<
+        "loading" | "ready" | "error"
+      >(isConnected ? "loading" : "ready");
+      const [retryCount, setRetryCount] = React.useState(0);
+      const demoParticipant = data.participants.find(
         (person) => person.id === CURRENT_PARTICIPANT_ID,
       );
-      const team = participant
-        ? getTeam(data, participant.teamId)
-        : getTeam(data, CURRENT_TEAM_ID);
-      const school = data.schools.find((item) => item.id === team?.schoolId);
-      const teamScores = data.competitions.map((competition) =>
-        team ? getScore(data.scores, team.id, competition.id) : undefined,
-      );
+      const participant = isConnected
+        ? certificate?.participant
+        : demoParticipant;
+      const team = isConnected
+        ? certificate?.team
+        : demoParticipant
+          ? getTeam(data, demoParticipant.teamId)
+          : getTeam(data, CURRENT_TEAM_ID);
+      const school = isConnected
+        ? certificate?.school
+        : data.schools.find((item) => item.id === team?.schoolId);
+      const teamScores = certificate
+        ? certificate.scores.map((score) => ({
+            id: score.id,
+            teamId: certificate.team.id,
+            competitionId: score.competitionId,
+            score: score.score,
+            status: "approved" as const,
+            feedback: "",
+          }))
+        : data.competitions.map((competition) =>
+            team ? getScore(data.scores, team.id, competition.id) : undefined,
+          );
       const allApproved =
         teamScores.length > 0 &&
         teamScores.every((score) => score?.status === "approved");
-      const isKnownUser = userId === CURRENT_USER_ID && Boolean(participant);
+      const isKnownUser = isConnected
+        ? certificate?.userId === userId
+        : userId === CURRENT_USER_ID && Boolean(demoParticipant);
       const [fingerprint, setFingerprint] = React.useState("Menghitung sidik data…");
       const scoreTotal = teamScores.reduce(
         (total, score) =>
@@ -2792,19 +3550,73 @@ function EventCoordination({ notify }: { notify: Notify }) {
         : "—";
 
       React.useEffect(() => {
+        if (!isConnected) {
+          setVerificationState("ready");
+          return;
+        }
         let active = true;
-        const source = JSON.stringify({
-          userId,
-          name: participant?.name,
-          team: team?.name,
-          school: school?.name,
-          scores: teamScores.map((score) => ({
-            score: score?.score ?? null,
-            status: score?.status ?? "missing",
-          })),
-        });
+        setVerificationState("loading");
+        const supabase = getSupabaseBrowserClient();
+        if (!supabase) {
+          setVerificationState("error");
+          return () => {
+            active = false;
+          };
+        }
+        void (async () => {
+          try {
+            const { data: result, error } = await supabase.rpc(
+              "get_public_certificate",
+              { target_user_id: userId },
+            );
+            if (!active) return;
+            if (error) {
+              console.error("Gagal memverifikasi sertifikat melalui Supabase.", error);
+              setCertificate(null);
+              setVerificationState("error");
+              return;
+            }
+            if (result === null) {
+              setCertificate(null);
+              setVerificationState("ready");
+              return;
+            }
+            const parsed = parsePublicCertificate(result);
+            if (!parsed || parsed.userId !== userId) {
+              console.error("Respons verifikasi sertifikat tidak valid.");
+              setCertificate(null);
+              setVerificationState("error");
+              return;
+            }
+            setCertificate(parsed);
+            setVerificationState("ready");
+          } catch (error: unknown) {
+            console.error("Permintaan verifikasi sertifikat gagal.", error);
+            if (!active) return;
+            setCertificate(null);
+            setVerificationState("error");
+          }
+        })();
+        return () => {
+          active = false;
+        };
+      }, [isConnected, retryCount, userId]);
+
+      const fingerprintSource = JSON.stringify({
+        userId,
+        name: participant?.name,
+        team: team?.name,
+        school: school?.name,
+        scores: teamScores.map((score) => ({
+          score: score?.score ?? null,
+          status: score?.status ?? "missing",
+        })),
+      });
+
+      React.useEffect(() => {
+        let active = true;
         void window.crypto.subtle
-          .digest("SHA-256", new TextEncoder().encode(source))
+          .digest("SHA-256", new TextEncoder().encode(fingerprintSource))
           .then((digest) => {
             if (!active) return;
             const hex = Array.from(new Uint8Array(digest))
@@ -2813,13 +3625,65 @@ function EventCoordination({ notify }: { notify: Notify }) {
             setFingerprint(`sha256:${hex}`);
           })
           .catch((error: unknown) => {
-            console.error("Gagal menghitung sidik data sertifikat demo.", error);
+            console.error("Gagal menghitung sidik data sertifikat.", error);
             if (active) setFingerprint("Sidik data tidak dapat dihitung.");
           });
         return () => {
           active = false;
         };
-      }, [userId, participant?.name, team?.name, school?.name, data.scores]);
+      }, [fingerprintSource]);
+
+      if (isConnected && verificationState === "loading") {
+        return (
+          <main className="verify-page">
+            <div className="verify-wrap">
+              <div className="verify-brand">
+                <Logo />
+              </div>
+              <section className="verify-card" aria-live="polite">
+                <div className="verify-head">
+                  <span className="verify-status is-pending">
+                    <Clock3 aria-hidden="true" />
+                    Memeriksa sertifikat
+                  </span>
+                  <h1>Memeriksa data penerbit</h1>
+                  <p>Data sertifikat sedang dicocokkan dengan catatan kegiatan.</p>
+                </div>
+              </section>
+            </div>
+          </main>
+        );
+      }
+
+      if (isConnected && verificationState === "error") {
+        return (
+          <main className="verify-page">
+            <div className="verify-wrap">
+              <div className="verify-brand">
+                <Logo />
+              </div>
+              <section className="verify-card" aria-live="polite">
+                <div className="verify-head">
+                  <span className="verify-status is-pending">
+                    <CircleHelp aria-hidden="true" />
+                    Pemeriksaan gagal
+                  </span>
+                  <h1>Sertifikat belum dapat diperiksa</h1>
+                  <p>Periksa koneksi, lalu coba lagi.</p>
+                </div>
+                <div className="verify-body">
+                  <button
+                    className="button button-secondary"
+                    onClick={() => setRetryCount((count) => count + 1)}
+                  >
+                    Coba lagi
+                  </button>
+                </div>
+              </section>
+            </div>
+          </main>
+        );
+      }
 
       if (!isKnownUser || !participant || !team || !school) {
         return (
@@ -2835,7 +3699,10 @@ function EventCoordination({ notify }: { notify: Notify }) {
                     ID tidak ditemukan
                   </span>
                   <h1>Sertifikat tidak terdaftar</h1>
-                  <p>Periksa kembali tautan atau hubungi operator kegiatan.</p>
+                  <p>
+                    ID tidak ditemukan atau sertifikat belum diterbitkan. Periksa
+                    kembali tautan atau hubungi operator kegiatan.
+                  </p>
                 </div>
                 <div className="verify-body">
                   <Link className="button button-secondary" href="/dashboard">
@@ -2848,7 +3715,10 @@ function EventCoordination({ notify }: { notify: Notify }) {
         );
       }
 
-      const verified = allApproved && data.certificatesPublished;
+      const verified = isConnected
+        ? Boolean(certificate)
+        : allApproved && data.certificatesPublished;
+      const issuedAt = certificate?.issuedAt ?? data.certificatesPublishedAt;
       return (
         <main className="verify-page">
           <div className="verify-wrap">
@@ -2901,12 +3771,12 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   <div className="verify-detail">
                     <span>Tanggal terbit</span>
                     <strong>
-                      {verified && data.certificatesPublishedAt
+                      {verified && issuedAt
                         ? new Intl.DateTimeFormat("id-ID", {
                             day: "numeric",
                             month: "long",
                             year: "numeric",
-                          }).format(new Date(data.certificatesPublishedAt))
+                          }).format(new Date(issuedAt))
                         : "Belum diterbitkan"}
                     </strong>
                   </div>
@@ -2916,13 +3786,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   </div>
                 </div>
                 <div className="verify-fingerprint">
-                  <span>Sidik data SHA-256 (pratinjau lokal)</span>
+                  <span>
+                    Fingerprint tampilan SHA-256 · bukan tanda tangan elektronik
+                  </span>
                   <code>{fingerprint}</code>
                 </div>
                 <p className="verify-footnote">
-                  Halaman ini adalah pratinjau lokal. Fingerprint hanya membantu
-                  membandingkan data demo dan belum menjadi tanda tangan elektronik
-                  atau bukti keaslian untuk keperluan resmi.
+                  {isConnected
+                    ? "Status valid berasal dari catatan nilai yang disahkan dan tanggal penerbitan di Supabase. Fingerprint tampilan bukan tanda tangan elektronik."
+                    : "Halaman ini adalah pratinjau lokal. Fingerprint hanya membantu membandingkan data demo dan bukan bukti keaslian untuk keperluan resmi."}
                 </p>
                 <div style={{ marginTop: 18 }}>
                   <Link className="text-link" href="/dashboard">
@@ -2938,10 +3810,40 @@ function EventCoordination({ notify }: { notify: Notify }) {
 
     function AuthPage({ register = false }: { register?: boolean }) {
       const router = useRouter();
-      const { data } = useWorkspace();
-      const submit = (event: React.FormEvent<HTMLFormElement>) => {
+      const { isConnected, signIn, signUp } = useWorkspace();
+      const [name, setName] = React.useState("");
+      const [email, setEmail] = React.useState("");
+      const [password, setPassword] = React.useState("");
+      const [busy, setBusy] = React.useState(false);
+      const [errorMessage, setErrorMessage] = React.useState("");
+      const [confirmationRequired, setConfirmationRequired] = React.useState(false);
+      const submit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        router.push("/dashboard");
+        setBusy(true);
+        setErrorMessage("");
+        try {
+          if (!isConnected) {
+            router.push("/dashboard");
+            return;
+          }
+          if (register) {
+            const signedIn = await signUp(name, email, password);
+            if (signedIn) router.push("/dashboard");
+            else setConfirmationRequired(true);
+          } else {
+            await signIn(email, password);
+            router.push("/dashboard");
+          }
+        } catch (error) {
+          console.error("Autentikasi Supabase gagal.", error);
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Autentikasi gagal. Periksa kembali data akun Anda.",
+          );
+        } finally {
+          setBusy(false);
+        }
       };
       return (
         <main className="auth-page">
@@ -2955,7 +3857,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
               </p>
             </div>
             <p className="auth-story-foot">
-              Data peserta, regu, dan nilai contoh · Belum terhubung ke akun nyata
+              {isConnected
+                ? "Akun dan data kegiatan terhubung ke Supabase."
+                : "Mode pratinjau lokal · Supabase belum dikonfigurasi"}
             </p>
           </section>
           <section className="auth-main">
@@ -2963,14 +3867,23 @@ function EventCoordination({ notify }: { notify: Notify }) {
               <h2>{register ? "Daftar peserta" : "Masuk ke Ruang LT-1"}</h2>
               <p>
                 {register
-                  ? "Buat akun peserta untuk mengikuti kegiatan."
-                  : "Gunakan tampilan demo untuk menjelajahi dashboard."}
+                  ? "Buat akun peserta dengan email dan kata sandi."
+                  : isConnected
+                    ? "Masuk dengan akun peserta atau petugas yang terdaftar."
+                    : "Buka pratinjau lokal untuk menjelajahi dashboard."}
               </p>
               <div className="form-stack">
                 {register ? (
                   <label>
                     <span className="field-label">Nama lengkap</span>
-                    <input className="field" placeholder="Nama peserta" required />
+                    <input
+                      className="field"
+                      placeholder="Nama peserta"
+                      autoComplete="name"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                    />
                   </label>
                 ) : null}
                 <label>
@@ -2979,6 +3892,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
                     className="field"
                     type="email"
                     placeholder="nama@email.com"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
                     required
                   />
                 </label>
@@ -2988,33 +3904,45 @@ function EventCoordination({ notify }: { notify: Notify }) {
                     className="field"
                     type="password"
                     placeholder="Minimal 8 karakter"
+                    autoComplete={register ? "new-password" : "current-password"}
                     minLength={8}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
                     required
                   />
                 </label>
-                {register ? (
-                  <label>
-                    <span className="field-label">Pangkalan</span>
-                    <select className="field" defaultValue="" required>
-                      <option value="" disabled>
-                        Pilih sekolah
-                      </option>
-                      {data.schools.map((school) => (
-                        <option key={school.id} value={school.id}>
-                          {school.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                <button className="button" type="submit">
-                  {register ? "Buat akun demo" : "Masuk ke dashboard"}
+                <button className="button" type="submit" disabled={busy}>
+                  {busy
+                    ? "Memproses…"
+                    : register
+                      ? isConnected
+                        ? "Buat akun peserta"
+                        : "Buat akun demo"
+                      : isConnected
+                        ? "Masuk"
+                        : "Masuk ke dashboard"}
                   <ArrowRight aria-hidden="true" />
                 </button>
               </div>
+              {errorMessage ? (
+                <div className="notice auth-error" role="alert">
+                  <CircleHelp aria-hidden="true" />
+                  <p>{errorMessage}</p>
+                </div>
+              ) : null}
+              {confirmationRequired ? (
+                <div className="notice" role="status">
+                  <CheckCircle2 aria-hidden="true" />
+                  <p>
+                    Akun berhasil dibuat. Periksa email untuk mengonfirmasi
+                    pendaftaran sebelum masuk.
+                  </p>
+                </div>
+              ) : null}
               <p className="field-hint">
-                Formulir ini hanya menunjukkan tampilan. Akun tidak dibuat atau
-                disimpan.
+                {isConnected
+                  ? "Akun baru mendapat peran peserta. Operator akan memetakan regu dan pangkalan."
+                  : "Mode pratinjau: formulir ini tidak membuat atau menyimpan akun."}
               </p>
               <div className="auth-switch">
                 {register ? "Sudah punya akun? " : "Belum terdaftar? "}
@@ -3037,7 +3965,16 @@ function EventCoordination({ notify }: { notify: Notify }) {
       competitionId?: string;
       userId?: string;
     }) {
-      const { data } = useWorkspace();
+      const {
+        data,
+        isConnected,
+        authReady,
+        dataLoading,
+        dataError,
+        session,
+        profile,
+      } = useWorkspace();
+      const router = useRouter();
       const [toast, setToast] = React.useState<{ message: string; error: boolean } | null>(
         null,
       );
@@ -3045,6 +3982,94 @@ function EventCoordination({ notify }: { notify: Notify }) {
         setToast({ message, error: isError });
         window.setTimeout(() => setToast(null), 3600);
       };
+
+      const isAuthView = view === "login" || view === "register";
+      const isPublicView = view === "verify";
+      const requiredRole: Role | null =
+        view === "operator" ||
+        view === "scores" ||
+        view === "schools" ||
+        view === "teams" ||
+        view === "competitions" ||
+        view === "publication"
+          ? "operator"
+          : view === "juri"
+            ? "juri"
+            : view === "panitia"
+              ? "panitia"
+              : ["participant", "leaderboard", "scan", "teamScores", "profile", "submit"].includes(
+                    view,
+                  )
+                ? "peserta"
+                : null;
+      const roleLanding: Record<Role, string> = {
+        peserta: "/dashboard",
+        juri: "/juri",
+        panitia: "/panitia",
+        operator: "/operator",
+      };
+
+      React.useEffect(() => {
+        if (!isConnected || !authReady || isAuthView || isPublicView) return;
+        if (!session) {
+          router.replace("/login");
+        } else if (profile && requiredRole && profile.role !== requiredRole) {
+          router.replace(roleLanding[profile.role]);
+        }
+      }, [
+        authReady,
+        isAuthView,
+        isConnected,
+        isPublicView,
+        profile,
+        requiredRole,
+        router,
+        session,
+      ]);
+
+      if (isConnected && !isAuthView && !isPublicView) {
+        if (!authReady || dataLoading || !session) {
+          return (
+            <main className="auth-main">
+              <p role="status">Memeriksa sesi dan memuat data kegiatan…</p>
+            </main>
+          );
+        }
+        if (dataError) {
+          return (
+            <main className="auth-main">
+              <section className="auth-card" role="alert">
+                <h2>Data Supabase tidak dapat dimuat</h2>
+                <p>{dataError}</p>
+                <button className="button" onClick={() => window.location.reload()}>
+                  Coba lagi
+                </button>
+              </section>
+            </main>
+          );
+        }
+        if (!profile) {
+          return (
+            <main className="auth-main">
+              <section className="auth-card" role="alert">
+                <h2>Profil akun belum tersedia</h2>
+                <p>
+                  Akun autentikasi ditemukan, tetapi profil aplikasi tidak ada.
+                  Pastikan migration Supabase sudah dijalankan atau minta operator
+                  memeriksa tabel profiles.
+                </p>
+              </section>
+            </main>
+          );
+        }
+        if (requiredRole && profile.role !== requiredRole) {
+          return (
+            <main className="auth-main">
+              <p role="status">Membuka ruang kerja sesuai peran akun…</p>
+            </main>
+          );
+        }
+      }
 
       if (view === "login" || view === "register") {
         return <AuthPage register={view === "register"} />;
@@ -3068,7 +4093,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
           content = <ParticipantScoreRecap />;
           break;
         case "profile":
-          content = <ParticipantProfile />;
+          content = <ParticipantProfile notify={notify} />;
           break;
         case "submit":
           content = <SubmissionPage competitionId={competitionId} notify={notify} />;
@@ -3085,8 +4110,11 @@ function EventCoordination({ notify }: { notify: Notify }) {
         case "teams":
           content = <TeamManagement notify={notify} />;
           break;
+        case "competitions":
+          content = <CompetitionManagement notify={notify} />;
+          break;
         case "publication":
-          content = <PublicationSettings />;
+          content = <PublicationSettings notify={notify} />;
           break;
         case "juri":
           content = <JuryScoring notify={notify} />;

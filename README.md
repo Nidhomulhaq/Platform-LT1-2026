@@ -13,7 +13,48 @@ npm run dev
 Buka `http://localhost:3000`. Periksa aplikasi produksi dengan `npm run build`
 dan jalankan hasilnya memakai `npm run start`.
 
-## Halaman pratinjau
+## Menghubungkan Supabase
+
+1. Salin `.env.example` menjadi `.env.local`, lalu isi Project URL dan anon/publishable
+   key dari pengaturan API proyek Supabase:
+
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<publishable-key>
+   ```
+
+   Jangan masukkan password database atau service-role key ke variabel `NEXT_PUBLIC_*`.
+   `.env.local` diabaikan Git.
+2. Jalankan isi
+   [`supabase/migrations/20261031000000_initial_schema.sql`](./supabase/migrations/20261031000000_initial_schema.sql)
+   melalui Supabase SQL Editor. Migration membuat skema, trigger profil otomatis,
+   kebijakan RLS, dan fungsi verifikasi sertifikat tanpa mengisi data demo.
+3. Jalankan `npm run dev`, lalu buat akun lewat `/register`. Pendaftaran publik
+   membuat profil dengan role `peserta`.
+4. Tetapkan akun operator pertama dari SQL Editor dengan email akun yang sudah
+   terdaftar:
+
+   ```sql
+   update public.profiles as p
+   set role = 'operator'
+   from auth.users as u
+   where p.id = u.id
+     and u.email = 'email-operator@example.com';
+   ```
+
+   Keluar lalu masuk kembali agar role baru dimuat. Terapkan cara yang sama dengan
+   role `juri` atau `panitia` untuk akun petugas. Operator dapat membuat pangkalan,
+   regu, dan mata lomba dari menu operator, memetakan peserta ke regu, serta
+   menetapkan juri pada setiap mata lomba.
+5. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
+   `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
+   sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
+
+Tanpa kedua variabel Supabase, aplikasi menggunakan mode demo `localStorage`.
+Jangan memakai connection string PostgreSQL atau service-role key di aplikasi
+browser.
+
+## Halaman aplikasi
 
 - `/dashboard` — progres peserta, tugas, lencana, dan papan skor.
 - `/dashboard/submit/[competitionId]` — pengumpulan tugas, termasuk CBT.
@@ -25,12 +66,13 @@ dan jalankan hasilnya memakai `npm run start`.
 - `/panitia` — rilis tugas dan catat kehadiran regu.
 - `/operator` — ringkasan kegiatan.
 - `/operator/scores` — setujui nilai atau minta revisi.
-- `/operator/teams` dan `/operator/schools` — pemetaan peserta serta data pangkalan.
+- `/operator/teams`, `/operator/schools`, dan `/operator/competitions` — pengelolaan
+  regu, pangkalan, dan mata lomba.
 - `/operator/publication` — atur papan skor dan akses sertifikat.
-- `/verify/[userId]` — halaman verifikasi pratinjau.
+- `/verify/[userId]` — pemeriksaan sertifikat terbit melalui Supabase atau pratinjau lokal.
 
-Data contoh dan perubahan interaksi disimpan di `localStorage` peramban.
-Autentikasi, Supabase, unggahan berkas, dan kebijakan akses produksi belum
-dihubungkan. Sertifikat dibuat saat diminta sebagai SVG dengan QR menuju halaman
-verifikasi; fingerprint lokal bukan tanda tangan elektronik dan tidak membuktikan
-keaslian dokumen.
+Mode demo menyimpan data contoh dan perubahan interaksi di `localStorage` peramban.
+Dalam mode Supabase, autentikasi dan data operasional menggunakan Supabase dengan
+kebijakan Row Level Security. Unggahan berkas memerlukan konfigurasi storage terpisah.
+QR sertifikat menuju halaman verifikasi; fingerprint tampilan bukan tanda tangan
+elektronik.
