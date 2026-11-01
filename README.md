@@ -43,7 +43,9 @@ dan jalankan hasilnya memakai `npm run start`.
 
    Key juga dapat diberikan lewat `SUPABASE_SERVICE_ROLE_KEY`. Jika Regu Pompom
    belum ada dan database memiliki beberapa pangkalan, isi `POMPOM_SCHOOL_ID`
-   dengan ID pangkalan Adellia. Jalankan:
+   dengan ID pangkalan Adellia. Jika belum ada pangkalan, skrip tetap membuat
+   akun tetapi menunda pembuatan regu sampai pangkalan yang benar tersedia.
+   Jalankan:
 
    ```bash
    npm run provision:sample-accounts
@@ -56,7 +58,10 @@ dan jalankan hasilnya memakai `npm run start`.
    bagikan lewat kanal privat dan simpan dengan aman. Reset kata sandi akun
    dilakukan pengelola melalui Supabase Authentication jika diperlukan.
    Hapus key admin dari `.env.local` setelah provisioning selesai. Jangan pernah
-   menambahkannya ke Vercel Environment Variables atau browser.
+   menambahkannya ke Vercel Environment Variables atau browser. Setelah membuat
+   pangkalan Adellia di `/operator/schools`, isi `POMPOM_SCHOOL_ID` di `.env.local`
+   dengan UUID pangkalan tersebut lalu jalankan skrip kembali untuk membuat/
+   memetakan Regu Pompom.
 5. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
