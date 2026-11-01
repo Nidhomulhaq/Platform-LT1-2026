@@ -29,10 +29,12 @@ dan jalankan hasilnya memakai `npm run start`.
    [`supabase/migrations/20261031000000_initial_schema.sql`](./supabase/migrations/20261031000000_initial_schema.sql)
    melalui Supabase SQL Editor. Migration membuat skema, trigger profil otomatis,
    kebijakan RLS, dan fungsi verifikasi sertifikat tanpa mengisi data demo.
-3. Jalankan `npm run dev`, lalu buat akun lewat `/register`. Pendaftaran publik
-   membuat profil dengan role `peserta`.
+3. Pendaftaran mandiri di website dinonaktifkan. Buat akun dari **Authentication →
+   Users → Add user** di Supabase Dashboard. Gunakan email unik dan kata sandi
+   sementara; aktifkan konfirmasi email hanya jika pengguna dapat membuka emailnya.
+   Trigger migration otomatis membuat profil baru dengan role `peserta`.
 4. Tetapkan akun operator pertama dari SQL Editor dengan email akun yang sudah
-   terdaftar:
+   dibuat:
 
    ```sql
    update public.profiles as p
@@ -42,16 +44,19 @@ dan jalankan hasilnya memakai `npm run start`.
      and u.email = 'email-operator@example.com';
    ```
 
-   Keluar lalu masuk kembali agar role baru dimuat. Terapkan cara yang sama dengan
-   role `juri` atau `panitia` untuk akun petugas. Operator dapat membuat pangkalan,
-   regu, dan mata lomba dari menu operator, memetakan peserta ke regu, serta
-   menetapkan juri pada setiap mata lomba.
+   Ganti nilai role menjadi `juri` atau `panitia` untuk akun petugas. Untuk setiap
+   akun, verifikasi hasil query menunjukkan tepat satu profil dan role yang benar.
+   Pengguna keluar lalu masuk kembali agar role baru dimuat. Operator dapat membuat
+   pangkalan, regu, dan mata lomba, memetakan peserta ke regu, serta menetapkan juri
+   pada setiap mata lomba.
 5. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
 
 Supabase wajib dikonfigurasi untuk membuka aplikasi. Tanpa URL dan publishable
-key, semua halaman kegiatan terkunci dan data demo tidak dimuat. Key lama
+key, semua halaman kegiatan terkunci dan data demo tidak dimuat. Rute `/register`
+selalu dialihkan ke halaman login; akun hanya dibuat oleh pengelola proyek Supabase.
+Alur autentikasi saat ini memerlukan email unik untuk setiap akun. Key lama
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` masih didukung untuk kompatibilitas, tetapi key
 publishable disarankan. Jangan memakai connection string PostgreSQL atau
 service-role/secret key pada variabel `NEXT_PUBLIC_*`.
@@ -133,8 +138,8 @@ preview.
 - `/operator/publication` — atur papan skor dan akses sertifikat.
 - `/verify/[userId]` — pemeriksaan sertifikat terbit melalui Supabase atau pratinjau lokal.
 
-Aplikasi memerlukan akun Supabase untuk membuka halaman kegiatan. Pendaftaran
-peserta menggunakan verifikasi email; peran petugas ditetapkan oleh operator proyek.
-Data operasional menggunakan kebijakan Row Level Security. Unggahan berkas
+Aplikasi memerlukan akun Supabase untuk membuka halaman kegiatan. Pembuatan akun
+dan pemberian role dilakukan pengelola melalui Supabase; website tidak menyediakan
+pendaftaran mandiri. Data operasional menggunakan kebijakan Row Level Security. Unggahan berkas
 memerlukan konfigurasi storage terpisah. QR sertifikat menuju halaman verifikasi;
 fingerprint tampilan bukan tanda tangan elektronik.

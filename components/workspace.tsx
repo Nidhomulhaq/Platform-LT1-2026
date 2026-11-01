@@ -74,8 +74,7 @@ type View =
   | "juri"
   | "panitia"
   | "verify"
-  | "login"
-  | "register";
+  | "login";
 
 type Notify = (message: string, isError?: boolean) => void;
 
@@ -96,7 +95,6 @@ const viewTitles: Record<View, string> = {
   panitia: "Kegiatan & kehadiran",
   verify: "Verifikasi sertifikat",
   login: "Masuk",
-  register: "Daftar peserta",
 };
 
 function Logo({ light = false }: { light?: boolean }) {
@@ -147,7 +145,6 @@ function IconForView({ view }: { view: View }) {
     case "verify":
       return <ShieldCheck {...props} />;
     case "login":
-    case "register":
       return <LogIn {...props} />;
   }
 }
@@ -3808,15 +3805,13 @@ function EventCoordination({ notify }: { notify: Notify }) {
       );
     }
 
-    function AuthPage({ register = false }: { register?: boolean }) {
+    function AuthPage() {
       const router = useRouter();
-      const { isConnected, signIn, signUp } = useWorkspace();
-      const [name, setName] = React.useState("");
+      const { isConnected, signIn } = useWorkspace();
       const [email, setEmail] = React.useState("");
       const [password, setPassword] = React.useState("");
       const [busy, setBusy] = React.useState(false);
       const [errorMessage, setErrorMessage] = React.useState("");
-      const [confirmationRequired, setConfirmationRequired] = React.useState(false);
       const submit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setBusy(true);
@@ -3824,17 +3819,11 @@ function EventCoordination({ notify }: { notify: Notify }) {
         try {
           if (!isConnected) {
             throw new Error(
-              "Koneksi Supabase belum siap. Masukkan Project URL dan publishable key sebelum membuat sesi akun.",
+              "Koneksi Supabase belum siap. Masukkan Project URL dan publishable key sebelum masuk.",
             );
           }
-          if (register) {
-            const signedIn = await signUp(name, email, password);
-            if (signedIn) router.push("/dashboard");
-            else setConfirmationRequired(true);
-          } else {
-            await signIn(email, password);
-            router.push("/dashboard");
-          }
+          await signIn(email, password);
+          router.push("/dashboard");
         } catch (error) {
           console.error("Autentikasi Supabase gagal.", error);
           setErrorMessage(
@@ -3865,13 +3854,11 @@ function EventCoordination({ notify }: { notify: Notify }) {
           </section>
           <section className="auth-main">
             <form className="auth-card" onSubmit={submit}>
-              <h2>{register ? "Daftar peserta" : "Masuk ke Ruang LT-1"}</h2>
+              <h2>Masuk ke Ruang LT-1</h2>
               <p>
-                {register
-                  ? "Buat akun peserta dengan email dan kata sandi."
-                  : isConnected
-                    ? "Masuk dengan akun peserta atau petugas yang terdaftar."
-                    : "Akses akun sedang dinonaktifkan sampai koneksi Supabase disiapkan."}
+                {isConnected
+                  ? "Masuk menggunakan akun yang telah dibuat dan dibagikan oleh operator."
+                  : "Akses akun sedang dinonaktifkan sampai koneksi Supabase disiapkan."}
               </p>
               {!isConnected ? (
                 <div className="notice auth-error" role="alert">
@@ -3884,20 +3871,6 @@ function EventCoordination({ notify }: { notify: Notify }) {
                 </div>
               ) : null}
               <div className="form-stack">
-                {register ? (
-                  <label>
-                    <span className="field-label">Nama lengkap</span>
-                    <input
-                      className="field"
-                      placeholder="Nama peserta"
-                      autoComplete="name"
-                      value={name}
-                      disabled={!isConnected || busy}
-                      onChange={(event) => setName(event.target.value)}
-                      required
-                    />
-                  </label>
-                ) : null}
                 <label>
                   <span className="field-label">Email</span>
                   <input
@@ -3916,9 +3889,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   <input
                     className="field"
                     type="password"
-                    placeholder="Minimal 8 karakter"
-                    autoComplete={register ? "new-password" : "current-password"}
-                    minLength={8}
+                    autoComplete="current-password"
                     value={password}
                     disabled={!isConnected || busy}
                     onChange={(event) => setPassword(event.target.value)}
@@ -3930,11 +3901,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   type="submit"
                   disabled={!isConnected || busy}
                 >
-                  {busy
-                    ? "Memproses…"
-                    : register
-                      ? "Buat akun peserta"
-                      : "Masuk"}
+                  {busy ? "Memproses…" : "Masuk"}
                   <ArrowRight aria-hidden="true" />
                 </button>
               </div>
@@ -3944,26 +3911,10 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   <p>{errorMessage}</p>
                 </div>
               ) : null}
-              {confirmationRequired ? (
-                <div className="notice" role="status">
-                  <CheckCircle2 aria-hidden="true" />
-                  <p>
-                    Akun berhasil dibuat. Periksa email untuk mengonfirmasi
-                    pendaftaran sebelum masuk.
-                  </p>
-                </div>
-              ) : null}
               <p className="field-hint">
-                {isConnected
-                  ? "Akun baru mendapat peran peserta. Operator akan memetakan regu dan pangkalan."
-                  : "Setelah koneksi aktif, pendaftaran membuat akun peserta yang diverifikasi melalui email."}
+                Akun dan peran dibuat oleh operator. Jika belum menerima akses,
+                hubungi panitia kegiatan.
               </p>
-              <div className="auth-switch">
-                {register ? "Sudah punya akun? " : "Belum terdaftar? "}
-                <Link href={register ? "/login" : "/register"}>
-                  {register ? "Masuk" : "Daftar"}
-                </Link>
-              </div>
             </form>
           </section>
         </main>
@@ -3997,7 +3948,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
         window.setTimeout(() => setToast(null), 3600);
       };
 
-      const isAuthView = view === "login" || view === "register";
+      const isAuthView = view === "login";
       const requiredRole: Role | null =
         view === "operator" ||
         view === "scores" ||
@@ -4101,8 +4052,8 @@ function EventCoordination({ notify }: { notify: Notify }) {
         }
       }
 
-      if (view === "login" || view === "register") {
-        return <AuthPage register={view === "register"} />;
+      if (view === "login") {
+        return <AuthPage />;
       }
       if (view === "verify") {
         return <VerificationPage userId={userId} />;

@@ -639,7 +639,6 @@ interface WorkspaceContextValue {
   profile: ProfileRow | null;
   currentUserId: string;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   createSchool: (
     school: Omit<School, "id">,
@@ -745,15 +744,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           password,
         });
         if (error) throw error;
-      },
-      signUp: async (name, email, password) => {
-        const { data: result, error } = await requireClient().auth.signUp({
-          email: email.trim(),
-          password,
-          options: { data: { full_name: name.trim() } },
-        });
-        if (error) throw error;
-        return Boolean(result.session);
       },
       signOut: async () => {
         const { error } = await requireClient().auth.signOut();

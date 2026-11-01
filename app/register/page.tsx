@@ -1,5 +1,6 @@
 import { WorkspaceApp } from "@/components/workspace";
+import { redirect } from "next/navigation";
 
 export default function RegisterPage() {
-  return <WorkspaceApp view="register" />;
+  redirect("/login");
 }
