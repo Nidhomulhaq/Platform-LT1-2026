@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { loginIdToAuthEmail } from "@/lib/auth/login-id";
 import type { Database } from "@/lib/supabase/database.types";
 
 export type Role = "operator" | "panitia" | "juri" | "peserta";
@@ -638,7 +639,7 @@ interface WorkspaceContextValue {
   session: Session | null;
   profile: ProfileRow | null;
   currentUserId: string;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (loginId: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   createSchool: (
     school: Omit<School, "id">,
@@ -738,9 +739,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       session,
       profile,
       currentUserId: session?.user.id ?? CURRENT_USER_ID,
-      signIn: async (email, password) => {
+      signIn: async (loginId, password) => {
         const { error } = await requireClient().auth.signInWithPassword({
-          email: email.trim(),
+          email: loginIdToAuthEmail(loginId),
           password,
         });
         if (error) throw error;

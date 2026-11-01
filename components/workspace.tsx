@@ -3808,7 +3808,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
     function AuthPage() {
       const router = useRouter();
       const { isConnected, signIn } = useWorkspace();
-      const [email, setEmail] = React.useState("");
+      const [loginId, setLoginId] = React.useState("");
       const [password, setPassword] = React.useState("");
       const [busy, setBusy] = React.useState(false);
       const [errorMessage, setErrorMessage] = React.useState("");
@@ -3822,7 +3822,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
               "Koneksi Supabase belum siap. Masukkan Project URL dan publishable key sebelum masuk.",
             );
           }
-          await signIn(email, password);
+          await signIn(loginId, password);
           router.push("/dashboard");
         } catch (error) {
           console.error("Autentikasi Supabase gagal.", error);
@@ -3872,15 +3872,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
               ) : null}
               <div className="form-stack">
                 <label>
-                  <span className="field-label">Email</span>
+                  <span className="field-label">ID pengguna</span>
                   <input
                     className="field"
-                    type="email"
-                    placeholder="nama@email.com"
-                    autoComplete="email"
-                    value={email}
+                    type="text"
+                    placeholder="contoh: adellia.putri"
+                    autoComplete="username"
+                    value={loginId}
                     disabled={!isConnected || busy}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => setLoginId(event.target.value)}
                     required
                   />
                 </label>

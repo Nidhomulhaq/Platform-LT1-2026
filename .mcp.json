@@ -1,0 +1,9 @@
+{
+	"mcpServers": {
+		"my-mcp-server-ae411d7c": {
+			"type": "stdio",
+			"command": "https://bcbgaozktwzwaqhgqmyn.supabase.co/rest/v1/",
+			"args": []
+		}
+	}
+}

@@ -29,37 +29,45 @@ dan jalankan hasilnya memakai `npm run start`.
    [`supabase/migrations/20261031000000_initial_schema.sql`](./supabase/migrations/20261031000000_initial_schema.sql)
    melalui Supabase SQL Editor. Migration membuat skema, trigger profil otomatis,
    kebijakan RLS, dan fungsi verifikasi sertifikat tanpa mengisi data demo.
-3. Pendaftaran mandiri di website dinonaktifkan. Buat akun dari **Authentication →
-   Users → Add user** di Supabase Dashboard. Gunakan email unik dan kata sandi
-   sementara; aktifkan konfirmasi email hanya jika pengguna dapat membuka emailnya.
-   Trigger migration otomatis membuat profil baru dengan role `peserta`.
-4. Tetapkan akun operator pertama dari SQL Editor dengan email akun yang sudah
-   dibuat:
+3. Jalankan migration
+   [`supabase/migrations/20261101011304_username_login_ids.sql`](./supabase/migrations/20261101011304_username_login_ids.sql)
+   setelah skema awal. Migration menambahkan ID pengguna unik untuk login.
+4. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
+   dan kata sandi; alamat email internal Supabase tidak perlu diketahui pengguna.
+   Untuk membuat empat akun yang diminta, tambahkan key admin Supabase privat ke
+   `.env.local` (jangan gunakan prefix `NEXT_PUBLIC_`):
 
-   ```sql
-   update public.profiles as p
-   set role = 'operator'
-   from auth.users as u
-   where p.id = u.id
-     and u.email = 'email-operator@example.com';
+   ```env
+   SUPABASE_SECRET_KEY=<secret-key>
    ```
 
-   Ganti nilai role menjadi `juri` atau `panitia` untuk akun petugas. Untuk setiap
-   akun, verifikasi hasil query menunjukkan tepat satu profil dan role yang benar.
-   Pengguna keluar lalu masuk kembali agar role baru dimuat. Operator dapat membuat
-   pangkalan, regu, dan mata lomba, memetakan peserta ke regu, serta menetapkan juri
-   pada setiap mata lomba.
+   Key juga dapat diberikan lewat `SUPABASE_SERVICE_ROLE_KEY`. Jika Regu Pompom
+   belum ada dan database memiliki beberapa pangkalan, isi `POMPOM_SCHOOL_ID`
+   dengan ID pangkalan Adellia. Jalankan:
+
+   ```bash
+   npm run provision:sample-accounts
+   ```
+
+   Skrip membuat/menyelaraskan akun berikut: `ahmad.nidhomulhaq` (operator),
+   `mario.jajaja` (panitia), `julio.cesar` (juri), dan `adellia.putri` (peserta).
+   Regu Pompom dibuat sebagai regu putri jika belum ada dan Adellia dimasukkan ke
+   regu tersebut. Kata sandi acak hanya ditulis ke CSV lokal yang diabaikan Git;
+   bagikan lewat kanal privat dan simpan dengan aman. Reset kata sandi akun
+   dilakukan pengelola melalui Supabase Authentication jika diperlukan.
+   Hapus key admin dari `.env.local` setelah provisioning selesai. Jangan pernah
+   menambahkannya ke Vercel Environment Variables atau browser.
 5. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
 
 Supabase wajib dikonfigurasi untuk membuka aplikasi. Tanpa URL dan publishable
 key, semua halaman kegiatan terkunci dan data demo tidak dimuat. Rute `/register`
-selalu dialihkan ke halaman login; akun hanya dibuat oleh pengelola proyek Supabase.
-Alur autentikasi saat ini memerlukan email unik untuk setiap akun. Key lama
+selalu dialihkan ke halaman login; akun hanya dibuat oleh pengelola. Key lama
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` masih didukung untuk kompatibilitas, tetapi key
 publishable disarankan. Jangan memakai connection string PostgreSQL atau
-service-role/secret key pada variabel `NEXT_PUBLIC_*`.
+service-role/secret key pada variabel `NEXT_PUBLIC_*`. ID pengguna login dipetakan
+ke identitas email internal `accounts.lt1.invalid` dan tidak memerlukan email pribadi.
 
 ## Deploy ke Vercel
 

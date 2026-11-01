@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "provision:sample-accounts": "node --env-file=.env.local scripts/provision-sample-accounts.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

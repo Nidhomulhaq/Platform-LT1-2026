@@ -50,6 +50,7 @@ export type Database = {
       profiles: Table<{
         id: string;
         full_name: string;
+        login_id: string | null;
         role: Database["public"]["Enums"]["user_role"];
         school_id: string | null;
         phone_number: string | null;
