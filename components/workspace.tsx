@@ -30,6 +30,7 @@ import {
   Menu,
   Medal,
   MessageSquareText,
+  Pencil,
   Plus,
   QrCode,
   Search,
@@ -73,6 +74,8 @@ type View =
   | "schools"
   | "teams"
   | "competitions"
+  | "judgeAssignments"
+  | "panitiaAssignments"
   | "publication"
   | "juri"
   | "panitia"
@@ -94,6 +97,8 @@ const viewTitles: Record<View, string> = {
   schools: "Data pangkalan",
   teams: "Manajemen regu",
   competitions: "Mata lomba",
+  judgeAssignments: "Penugasan juri",
+  panitiaAssignments: "Penugasan panitia",
   publication: "Papan skor & sertifikat",
   juri: "Input nilai juri",
   panitia: "Kegiatan & kehadiran",
@@ -142,6 +147,10 @@ function IconForView({ view }: { view: View }) {
       return <Users {...props} />;
     case "competitions":
       return <Flag {...props} />;
+    case "judgeAssignments":
+      return <ClipboardCheck {...props} />;
+    case "panitiaAssignments":
+      return <CalendarCheck {...props} />;
     case "publication":
       return <Flag {...props} />;
     case "juri":
@@ -274,6 +283,8 @@ function WorkspaceFrame({
     view === "schools" ||
     view === "teams" ||
     view === "competitions" ||
+    view === "judgeAssignments" ||
+    view === "panitiaAssignments" ||
     view === "publication"
       ? "operator"
       : view === "juri"
@@ -312,6 +323,16 @@ function WorkspaceFrame({
             view: "competitions",
             label: "Mata lomba",
             href: "/operator/competitions",
+          },
+          {
+            view: "judgeAssignments",
+            label: "Penugasan juri",
+            href: "/operator/judge-assignments",
+          },
+          {
+            view: "panitiaAssignments",
+            label: "Penugasan panitia",
+            href: "/operator/panitia-assignments",
           },
           {
             view: "publication",
@@ -3495,11 +3516,20 @@ function SwitchControl({
   );
 }
 
-function CompetitionManagement({ notify }: { notify: Notify }) {
+type CompetitionWorkspaceMode = "competitions" | "judges" | "panitia";
+
+function CompetitionWorkspace({
+  notify,
+  mode,
+}: {
+  notify: Notify;
+  mode: CompetitionWorkspaceMode;
+}) {
   const {
     data,
     createCompetition,
     updateCompetition,
+    deleteCompetition,
     assignJudge,
     removeJudgeAssignment,
     assignPanitia,
@@ -3515,14 +3545,19 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
   const [selectedPanitia, setSelectedPanitia] = React.useState<
     Record<string, string>
   >({});
-  const [descriptionDrafts, setDescriptionDrafts] = React.useState<
-    Record<string, string>
-  >({});
+  const [editingCompetition, setEditingCompetition] = React.useState<{
+    id: string;
+    title: string;
+    description: string;
+    taskType: Competition["taskType"];
+    criteria: string[];
+  } | null>(null);
   const [taskType, setTaskType] =
     React.useState<Competition["taskType"]>("live");
   const [creating, setCreating] = React.useState(false);
   const [assignmentBusy, setAssignmentBusy] = React.useState(false);
-  const [savingInstruction, setSavingInstruction] = React.useState("");
+  const [savingCompetition, setSavingCompetition] = React.useState(false);
+  const [deletingCompetition, setDeletingCompetition] = React.useState("");
 
   const updateTitle = (value: string) => {
     setTitle(value);
@@ -3539,10 +3574,12 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
 
   return (
     <>
-      <PageHeading
-        title="Mata lomba"
-        description="Siapkan pos dan tugas sebelum peserta mulai mengerjakan."
-      />
+      {mode === "competitions" ? (
+        <>
+          <PageHeading
+            title="Mata lomba"
+            description="Siapkan pos dan tugas sebelum peserta mulai mengerjakan."
+          />
       <section className="panel panel-pad">
         <SectionHeading
           title="Tambah mata lomba"
@@ -3690,95 +3727,344 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
           </button>
         </form>
       </section>
-      <section className="panel panel-pad" style={{ marginTop: 18 }}>
+          <section className="panel panel-pad" style={{ marginTop: 18 }}>
         <SectionHeading
           title="Daftar mata lomba"
           detail={`${data.competitions.length} mata lomba`}
         />
         {data.competitions.length ? (
-          <div className="activity-list">
-            {data.competitions.map((competition) => (
-              <div className="activity-row" key={competition.id}>
-                <span className="activity-copy">
-                  <strong>{competition.title}</strong>
-                  <span>
-                    {competition.id} ·{" "}
-                    {competition.taskType === "live"
-                      ? "Langsung"
-                      : competition.taskType === "cbt"
-                        ? "CBT"
-                        : "Unggah"}
-                  </span>
-                  <span>
-                    Kriteria:{" "}
-                    {competition.criteria.length
-                      ? competition.criteria
-                          .map((criterion) => criterion.name)
-                          .join(", ")
-                      : "Belum diatur"}
-                  </span>
-                  <label
-                    className="sr-only"
-                    htmlFor={`competition-instruction-${competition.id}`}
-                  >
-                    Instruksi tugas {competition.title}
-                  </label>
-                  <textarea
-                    id={`competition-instruction-${competition.id}`}
-                    className="field"
-                    rows={3}
-                    value={
-                      descriptionDrafts[competition.id] ??
-                      competition.description
-                    }
-                    onChange={(event) =>
-                      setDescriptionDrafts((current) => ({
-                        ...current,
-                        [competition.id]: event.target.value,
-                      }))
-                    }
-                    placeholder="Tulis instruksi tugas untuk peserta"
-                  />
-                  <button
-                    className="button button-secondary button-small"
-                    type="button"
-                    disabled={
-                      savingInstruction === competition.id ||
-                      (descriptionDrafts[competition.id] ??
-                        competition.description) === competition.description
-                    }
-                    onClick={() => {
-                      setSavingInstruction(competition.id);
-                      void updateCompetition(competition.id, {
-                        description:
-                          descriptionDrafts[competition.id] ??
-                          competition.description,
-                      })
-                        .then(() => {
-                          setDescriptionDrafts((current) => {
-                            const next = { ...current };
-                            delete next[competition.id];
-                            return next;
-                          });
-                          notify("Instruksi tugas berhasil disimpan.");
+          <div className="competition-list">
+            {data.competitions.map((competition) => {
+              const criteriaLocked = data.scores.some(
+                (score) => score.competitionId === competition.id,
+              );
+              const isEditing = editingCompetition?.id === competition.id;
+              return (
+                <article className="competition-item" key={competition.id}>
+                  <div className="competition-item-summary">
+                    <div className="activity-copy">
+                      <strong>{competition.title}</strong>
+                      <span>
+                        {competition.id} ·{" "}
+                        {competition.taskType === "live"
+                          ? "Langsung"
+                          : competition.taskType === "cbt"
+                            ? "CBT"
+                            : "Unggah"}
+                      </span>
+                      <span>
+                        Kriteria:{" "}
+                        {competition.criteria.length
+                          ? competition.criteria
+                              .map((criterion) => criterion.name)
+                              .join(", ")
+                          : "Belum diatur"}
+                      </span>
+                      {competition.description ? (
+                        <span>{competition.description}</span>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`status-pill${competition.isActive ? " is-approved" : ""}`}
+                    >
+                      {competition.isActive ? "Dirilis" : "Belum dirilis"}
+                    </span>
+                  </div>
+                  <div className="competition-item-actions">
+                    <button
+                      className="button button-secondary button-small"
+                      type="button"
+                      aria-label={`Edit mata lomba ${competition.title}`}
+                      aria-expanded={isEditing}
+                      aria-controls={`competition-editor-${competition.id}`}
+                      disabled={Boolean(deletingCompetition) || savingCompetition}
+                      onClick={() =>
+                        setEditingCompetition(
+                          isEditing
+                            ? null
+                            : {
+                                id: competition.id,
+                                title: competition.title,
+                                description: competition.description,
+                                taskType: competition.taskType,
+                                criteria: competition.criteria.map(
+                                  (criterion) => criterion.name,
+                                ),
+                              },
+                        )
+                      }
+                    >
+                      <Pencil aria-hidden="true" />
+                      {isEditing ? "Tutup edit" : "Edit"}
+                    </button>
+                    <button
+                      className="button button-danger button-small"
+                      type="button"
+                      aria-label={`Hapus mata lomba ${competition.title}`}
+                      disabled={Boolean(deletingCompetition) || savingCompetition}
+                      onClick={() => {
+                        const related = [
+                          `${data.judgeAssignments.filter((item) => item.competitionId === competition.id).length} penugasan juri`,
+                          `${data.panitiaAssignments.filter((item) => item.competitionId === competition.id).length} penugasan panitia`,
+                          `${data.scores.filter((item) => item.competitionId === competition.id).length} nilai`,
+                          `${data.submissions[competition.id] ? 1 : 0} kiriman tugas`,
+                          `${Object.keys(data.attendance).filter((key) => key.endsWith(`:${competition.id}`)).length} catatan kehadiran`,
+                        ];
+                        if (
+                          !window.confirm(
+                            `Hapus mata lomba "${competition.title}" secara permanen?\n\nData terkait yang ikut terhapus: ${related.join(", ")}.\nTindakan ini tidak dapat dibatalkan.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        setDeletingCompetition(competition.id);
+                        void deleteCompetition(competition.id)
+                          .then(() => {
+                            if (isEditing) setEditingCompetition(null);
+                            notify("Mata lomba dan data terkait berhasil dihapus.");
+                          })
+                          .catch((error: unknown) => {
+                            console.error("Gagal menghapus mata lomba.", error);
+                            notify("Mata lomba gagal dihapus.", true);
+                          })
+                          .finally(() => setDeletingCompetition(""));
+                      }}
+                    >
+                      <Trash2 aria-hidden="true" />
+                      {deletingCompetition === competition.id
+                        ? "Menghapus…"
+                        : "Hapus"}
+                    </button>
+                  </div>
+                  {isEditing && editingCompetition ? (
+                    <form
+                      id={`competition-editor-${competition.id}`}
+                      className="competition-editor"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const names = editingCompetition.criteria.map((name) =>
+                          name.trim(),
+                        );
+                        if (
+                          !editingCompetition.title.trim() ||
+                          editingCompetition.title.trim().length > 150
+                        ) {
+                          notify("Nama mata lomba harus berisi 1–150 karakter.", true);
+                          return;
+                        }
+                        if (
+                          !criteriaLocked &&
+                          names.some((name) => !name)
+                        ) {
+                          notify("Lengkapi semua kriteria penilaian.", true);
+                          return;
+                        }
+                        if (
+                          !criteriaLocked &&
+                          names.some((name) => name.length > 120)
+                        ) {
+                          notify("Nama kriteria maksimal 120 karakter.", true);
+                          return;
+                        }
+                        if (
+                          !criteriaLocked &&
+                          new Set(names.map((name) => name.toLowerCase())).size !==
+                            names.length
+                        ) {
+                          notify(
+                            "Nama kriteria penilaian tidak boleh duplikat.",
+                            true,
+                          );
+                          return;
+                        }
+
+                        setSavingCompetition(true);
+                        void updateCompetition(competition.id, {
+                          title: editingCompetition.title.trim(),
+                          description: editingCompetition.description.trim(),
+                          taskType: editingCompetition.taskType,
+                          criteria: criteriaLocked
+                            ? competition.criteria
+                            : names.map((name) => ({
+                                id: crypto.randomUUID(),
+                                name,
+                              })),
                         })
-                        .catch((error: unknown) => {
-                          console.error("Gagal menyimpan instruksi tugas.", error);
-                          notify("Instruksi tugas gagal disimpan.", true);
-                        })
-                        .finally(() => setSavingInstruction(""));
-                    }}
-                  >
-                    Simpan instruksi
-                  </button>
-                </span>
-                <span
-                  className={`status-pill${competition.isActive ? " is-approved" : ""}`}
-                >
-                  {competition.isActive ? "Dirilis" : "Belum dirilis"}
-                </span>
-              </div>
-            ))}
+                          .then(() => {
+                            setEditingCompetition(null);
+                            notify("Mata lomba berhasil diperbarui.");
+                          })
+                          .catch((error: unknown) => {
+                            console.error("Gagal memperbarui mata lomba.", error);
+                            notify("Mata lomba gagal diperbarui.", true);
+                          })
+                          .finally(() => setSavingCompetition(false));
+                      }}
+                    >
+                      <div className="school-fields">
+                        <label>
+                          <span className="field-label">Nama mata lomba</span>
+                          <input
+                            className="field"
+                            maxLength={150}
+                            required
+                            value={editingCompetition.title}
+                            onChange={(event) =>
+                              setEditingCompetition((current) =>
+                                current
+                                  ? { ...current, title: event.target.value }
+                                  : current,
+                              )
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span className="field-label">Jenis tugas</span>
+                          <select
+                            className="field"
+                            value={editingCompetition.taskType}
+                            onChange={(event) =>
+                              setEditingCompetition((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      taskType: event.target
+                                        .value as Competition["taskType"],
+                                    }
+                                  : current,
+                              )
+                            }
+                          >
+                            <option value="live">Penilaian langsung</option>
+                            <option value="cbt">Tes berbasis komputer</option>
+                            <option value="upload">Unggah berkas / tautan</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span className="field-label">Petunjuk singkat</span>
+                          <textarea
+                            className="field text-area"
+                            value={editingCompetition.description}
+                            onChange={(event) =>
+                              setEditingCompetition((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      description: event.target.value,
+                                    }
+                                  : current,
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
+                      <fieldset
+                        className="form-stack criteria-editor"
+                        disabled={criteriaLocked}
+                      >
+                        <legend className="field-label">Kriteria penilaian</legend>
+                        {criteriaLocked ? (
+                          <p className="field-hint">
+                            Kriteria dikunci karena lomba ini sudah memiliki
+                            nilai. Nama, petunjuk, dan jenis tugas tetap dapat
+                            diedit.
+                          </p>
+                        ) : (
+                          <p className="field-hint">
+                            Juri memberi nilai 0–100 untuk setiap kriteria.
+                          </p>
+                        )}
+                        {editingCompetition.criteria.map((criterion, index) => (
+                          <div className="criteria-editor-row" key={index}>
+                            <label>
+                              <span className="field-label">
+                                Kriteria {index + 1}
+                              </span>
+                              <input
+                                className="field"
+                                maxLength={120}
+                                required={!criteriaLocked}
+                                value={criterion}
+                                onChange={(event) =>
+                                  setEditingCompetition((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          criteria: current.criteria.map(
+                                            (name, currentIndex) =>
+                                              currentIndex === index
+                                                ? event.target.value
+                                                : name,
+                                          ),
+                                        }
+                                      : current,
+                                  )
+                                }
+                              />
+                            </label>
+                            <button
+                              className="button button-secondary button-small"
+                              type="button"
+                              aria-label={`Hapus kriteria ${index + 1}`}
+                              onClick={() =>
+                                setEditingCompetition((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        criteria: current.criteria.filter(
+                                          (_, currentIndex) =>
+                                            currentIndex !== index,
+                                        ),
+                                      }
+                                    : current,
+                                )
+                              }
+                            >
+                              <Trash2 aria-hidden="true" />
+                              Hapus
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          className="button button-secondary button-small"
+                          type="button"
+                          onClick={() =>
+                            setEditingCompetition((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    criteria: [...current.criteria, ""],
+                                  }
+                                : current,
+                            )
+                          }
+                        >
+                          <Plus aria-hidden="true" />
+                          Tambah kriteria
+                        </button>
+                      </fieldset>
+                      <div className="competition-editor-actions">
+                        <button
+                          className="button button-small"
+                          type="submit"
+                          disabled={savingCompetition}
+                        >
+                          {savingCompetition ? "Menyimpan…" : "Simpan perubahan"}
+                        </button>
+                        <button
+                          className="button button-secondary button-small"
+                          type="button"
+                          disabled={savingCompetition}
+                          onClick={() => setEditingCompetition(null)}
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    </form>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         ) : (
           <div className="empty-state">
@@ -3787,19 +4073,26 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
             <p>Tambahkan mata lomba untuk mulai menyiapkan kegiatan.</p>
           </div>
         )}
-      </section>
-      <section className="panel panel-pad" style={{ marginTop: 18 }}>
+          </section>
+        </>
+      ) : null}
+      {mode === "judges" ? (
+        <>
+          <PageHeading
+            title="Penugasan juri"
+            description="Tentukan mata lomba yang dapat dinilai setiap juri."
+          />
+          <section className="panel panel-pad">
         <SectionHeading
-          title="Penugasan juri"
-          detail="Tentukan mata lomba yang dapat dinilai setiap juri."
+          title="Penugasan per mata lomba"
+          detail="Tetapkan juri yang bertanggung jawab menilai setiap pos."
         />
         {!data.judges.length ? (
           <div className="empty-state">
             <Users aria-hidden="true" />
             <strong>Belum ada akun juri</strong>
             <p>
-              Daftarkan akun, lalu tetapkan rolenya sebagai juri melalui SQL
-              Editor Supabase.
+              Buat akun dengan peran Juri pada menu Manajemen akun.
             </p>
           </div>
         ) : !data.competitions.length ? (
@@ -3912,10 +4205,18 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
             })}
           </div>
         )}
-      </section>
-      <section className="panel panel-pad" style={{ marginTop: 18 }}>
+          </section>
+        </>
+      ) : null}
+      {mode === "panitia" ? (
+        <>
+          <PageHeading
+            title="Penugasan panitia"
+            description="Tentukan pos yang dapat dikelola setiap panitia."
+          />
+          <section className="panel panel-pad">
         <SectionHeading
-          title="Penugasan panitia"
+          title="Penugasan per mata lomba"
           detail="Panitia hanya dapat merilis instruksi dan mencatat kehadiran pada pos yang ditugaskan."
         />
         {!data.eventStaff.length ? (
@@ -4040,9 +4341,23 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
             })}
           </div>
         )}
-      </section>
+          </section>
+        </>
+      ) : null}
     </>
   );
+}
+
+function CompetitionManagement({ notify }: { notify: Notify }) {
+  return <CompetitionWorkspace notify={notify} mode="competitions" />;
+}
+
+function JudgeAssignmentManagement({ notify }: { notify: Notify }) {
+  return <CompetitionWorkspace notify={notify} mode="judges" />;
+}
+
+function PanitiaAssignmentManagement({ notify }: { notify: Notify }) {
+  return <CompetitionWorkspace notify={notify} mode="panitia" />;
 }
 
 function PublicationSettings({ notify }: { notify: Notify }) {
@@ -5533,6 +5848,8 @@ function EventCoordination({ notify }: { notify: Notify }) {
         view === "schools" ||
         view === "teams" ||
         view === "competitions" ||
+        view === "judgeAssignments" ||
+        view === "panitiaAssignments" ||
         view === "publication"
           ? "operator"
           : view === "juri"
@@ -5674,6 +5991,12 @@ function EventCoordination({ notify }: { notify: Notify }) {
           break;
         case "competitions":
           content = <CompetitionManagement notify={notify} />;
+          break;
+        case "judgeAssignments":
+          content = <JudgeAssignmentManagement notify={notify} />;
+          break;
+        case "panitiaAssignments":
+          content = <PanitiaAssignmentManagement notify={notify} />;
           break;
         case "publication":
           content = <PublicationSettings notify={notify} />;

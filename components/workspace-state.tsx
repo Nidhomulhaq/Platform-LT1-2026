@@ -704,8 +704,12 @@ interface WorkspaceContextValue {
   createCompetition: (competition: Competition) => Promise<void>;
   updateCompetition: (
     competitionId: string,
-    changes: Pick<Competition, "description">,
+    changes: Pick<
+      Competition,
+      "title" | "description" | "taskType" | "criteria"
+    >,
   ) => Promise<void>;
+  deleteCompetition: (competitionId: string) => Promise<void>;
   assignJudge: (juriId: string, competitionId: string) => Promise<void>;
   removeJudgeAssignment: (assignmentId: string) => Promise<void>;
   assignPanitia: (panitiaId: string, competitionId: string) => Promise<void>;
@@ -931,7 +935,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (supabase) {
           const { error } = await supabase
             .from("competitions")
-            .update({ description: changes.description })
+            .update({
+              title: changes.title,
+              description: changes.description,
+              task_type: changes.taskType,
+              criteria: changes.criteria.map((criterion) => ({
+                id: criterion.id,
+                name: criterion.name,
+              })),
+            })
             .eq("id", competitionId)
             .select("id")
             .single();
@@ -943,6 +955,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             competition.id === competitionId
               ? { ...competition, ...changes }
               : competition,
+          ),
+        }));
+      },
+      deleteCompetition: async (competitionId) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("competitions")
+            .delete()
+            .eq("id", competitionId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          competitions: current.competitions.filter(
+            (competition) => competition.id !== competitionId,
+          ),
+          judgeAssignments: current.judgeAssignments.filter(
+            (assignment) => assignment.competitionId !== competitionId,
+          ),
+          panitiaAssignments: current.panitiaAssignments.filter(
+            (assignment) => assignment.competitionId !== competitionId,
+          ),
+          scores: current.scores.filter(
+            (score) => score.competitionId !== competitionId,
+          ),
+          submissions: Object.fromEntries(
+            Object.entries(current.submissions).filter(
+              ([key]) => key !== competitionId,
+            ),
+          ),
+          attendance: Object.fromEntries(
+            Object.entries(current.attendance).filter(
+              ([key]) => !key.endsWith(`:${competitionId}`),
+            ),
           ),
         }));
       },

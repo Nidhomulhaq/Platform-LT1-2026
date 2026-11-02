@@ -102,6 +102,7 @@ textarea:focus-visible {
   width: 252px;
   flex-direction: column;
   padding: 25px 18px 18px;
+  overflow-y: auto;
   background: var(--ground);
 }
 
@@ -1876,6 +1877,50 @@ textarea:focus-visible {
   margin-top: 2px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.competition-list {
+  display: grid;
+}
+
+.competition-item {
+  display: grid;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.competition-item:last-child {
+  border-bottom: 0;
+}
+
+.competition-item-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.competition-item-summary .activity-copy {
+  min-width: 0;
+}
+
+.competition-item-summary .activity-copy span {
+  overflow-wrap: anywhere;
+}
+
+.competition-item-actions,
+.competition-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.competition-editor {
+  display: grid;
+  gap: 14px;
+  padding-top: 8px;
 }
 
 .attendance-count {
