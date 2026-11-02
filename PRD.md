@@ -307,7 +307,7 @@ CREATE POLICY "Users Can Update Own Profile" ON public.profiles FOR UPDATE USING
 
 * **Statistik Cepat**: Total Peserta, Total Regu, Total Lomba, Status Verifikasi Nilai.
 
-* **Manajemen Akun**: Membuat/menghapus/menonaktifkan akun, menetapkan role, memetakan anggota ke regu, memfilter daftar menurut role, mengunduh XLS dengan sheet per role yang berisi nama lengkap, ID pengguna, password (kosong), regu, dan Pinru untuk peserta. Unduhan tidak mengubah password; password tersimpan sebagai hash sehingga tidak dapat ditampilkan kembali.
+* **Manajemen Akun**: Membuat/menghapus/menonaktifkan akun, menetapkan role, memetakan anggota ke regu, memfilter daftar menurut role, mengunduh XLS dengan sheet per role yang berisi nama lengkap, ID pengguna, password baru, regu, dan Pinru untuk peserta. Unduhan mereset password seluruh akun dan memerlukan konfirmasi eksplisit karena password lama tersimpan sebagai hash dan tidak dapat ditampilkan kembali; file harus dibagikan secara privat.
 
 * **Manajemen Pangkalan/Sekolah (`/operator/schools`)**: Pengaturan data MI Ma'arif NU Islamiyah & MTs Ma'arif 28 Islamiyah beserta nama Kepala Madrasah dan Pembina untuk tanda tangan sertifikat.
 
