@@ -1786,9 +1786,8 @@ function escapeXml(value: string) {
 }
 
 function createAccountsWorkbook(
-  accounts: ManagedAccount[],
+  accounts: Array<ManagedAccount & { password: string }>,
   teams: Team[],
-  schools: School[],
 ) {
   const roles: Role[] = ["peserta", "panitia", "juri", "operator"];
   const worksheets = roles
@@ -1798,19 +1797,16 @@ function createAccountsWorkbook(
         .sort((left, right) => left.fullName.localeCompare(right.fullName))
         .map((account) => {
           const team = teams.find((item) => item.id === account.teamId);
-          const school = schools.find((item) => item.id === account.schoolId);
           return [
             account.fullName,
             account.loginId,
-            accountRoleLabels[account.role],
-            account.isActive ? "Aktif" : "Nonaktif",
+            account.password,
             team?.name ?? "",
-            school?.name ?? "",
-            account.isPinru ? "Ya" : "Tidak",
+            account.role === "peserta" ? (account.isPinru ? "Ya" : "Tidak") : "",
           ];
         });
       const tableRows = [
-        ["Nama lengkap", "ID pengguna", "Peran", "Status", "Regu", "Pangkalan", "Pinru"],
+        ["Nama lengkap", "ID pengguna", "Password", "Regu", "Pinru"],
         ...rows,
       ]
         .map(
@@ -1849,6 +1845,16 @@ function isManagedAccount(value: unknown): value is ManagedAccount {
   );
 }
 
+function isExportedAccount(
+  value: unknown,
+): value is ManagedAccount & { password: string } {
+  return (
+    isJsonRecord(value) &&
+    typeof value.password === "string" &&
+    isManagedAccount(value)
+  );
+}
+
 function AccountManagement({ notify }: { notify: Notify }) {
   const {
     data,
@@ -1874,6 +1880,7 @@ function AccountManagement({ notify }: { notify: Notify }) {
   const [busyAccountId, setBusyAccountId] = React.useState("");
   const [apiError, setApiError] = React.useState("");
   const [temporaryPassword, setTemporaryPassword] = React.useState("");
+  const [exportingAccounts, setExportingAccounts] = React.useState(false);
   const [accountRoleFilter, setAccountRoleFilter] = React.useState<Role | "all">(
     "all",
   );
@@ -1939,17 +1946,70 @@ function AccountManagement({ notify }: { notify: Notify }) {
     if (!schoolId && data.schools.length) setSchoolId(data.schools[0].id);
   }, [data.schools, schoolId]);
 
-  const downloadAccounts = () => {
-    const workbook = createAccountsWorkbook(accounts, data.teams, data.schools);
-    const file = new Blob([workbook], {
-      type: "application/vnd.ms-excel;charset=utf-8",
-    });
-    const url = URL.createObjectURL(file);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `akun-terdaftar-${new Date().toISOString().slice(0, 10)}.xls`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const downloadAccounts = async () => {
+    if (
+      !window.confirm(
+        "Untuk mengekspor XLS, password semua akun terdaftar akan direset. Password lama tidak dapat dipulihkan. Lanjutkan?",
+      )
+    ) {
+      return;
+    }
+
+    setExportingAccounts(true);
+    try {
+      const payload = await request("POST", {
+        action: "export-passwords",
+        confirmation: "reset-all-passwords",
+      });
+      if (
+        !Array.isArray(payload.accounts) ||
+        !payload.accounts.every(isExportedAccount) ||
+        !Array.isArray(payload.failedUserIds) ||
+        !payload.failedUserIds.every(
+          (userId): userId is string => typeof userId === "string",
+        )
+      ) {
+        throw new Error("Respons ekspor akun tidak valid.");
+      }
+
+      const exportedAccounts = payload.accounts;
+      if (!exportedAccounts.length) {
+        throw new Error(
+          "Tidak ada password akun yang berhasil direset. File XLS tidak dibuat.",
+        );
+      }
+
+      const workbook = createAccountsWorkbook(exportedAccounts, data.teams);
+      const file = new Blob([workbook], {
+        type: "application/vnd.ms-excel;charset=utf-8",
+      });
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `akun-terdaftar-${new Date().toISOString().slice(0, 10)}.xls`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const failedCount = payload.failedUserIds.length;
+      if (failedCount) {
+        notify(
+          `XLS berisi ${exportedAccounts.length} akun. ${failedCount} akun gagal direset dan tidak disertakan.`,
+          true,
+        );
+      } else {
+        notify(
+          `XLS ${exportedAccounts.length} akun berhasil diunduh. Simpan file dengan aman dan bagikan password secara privat.`,
+        );
+      }
+    } catch (error) {
+      console.error("Gagal mengekspor akun dan mereset password.", error);
+      notify(
+        error instanceof Error ? error.message : "XLS akun gagal dibuat.",
+        true,
+      );
+    } finally {
+      setExportingAccounts(false);
+    }
   };
 
   const deleteAccount = async (account: ManagedAccount) => {
@@ -2327,11 +2387,11 @@ function AccountManagement({ notify }: { notify: Notify }) {
                   <button
                     className="button button-secondary button-small"
                     type="button"
-                    disabled={loading || !accounts.length}
-                    onClick={downloadAccounts}
+                    disabled={loading || exportingAccounts || !accounts.length}
+                    onClick={() => void downloadAccounts()}
                   >
                     <Download aria-hidden="true" />
-                    Unduh XLS
+                    {exportingAccounts ? "Menyiapkan XLS…" : "Unduh XLS"}
                   </button>
                   <button
                     className="button button-secondary button-small"
