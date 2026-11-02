@@ -44,11 +44,10 @@ dan jalankan hasilnya memakai `npm run start`.
    dan kata sandi; alamat email internal Supabase tidak perlu diketahui pengguna.
    Operator dapat membuat atau menghapus akun, mengubah role/regu, menonaktifkan
    akun, memulai reset kata sandi, memfilter akun berdasarkan role, dan mengunduh
-   XLS dengan sheet terpisah per role dari `/operator/accounts`. Karena password
-   lama tidak bisa dibaca, proses unduh membuat password baru untuk semua akun;
-   file memuat nama lengkap, ID
-   pengguna, password baru, regu, dan Pinru untuk peserta. Simpan file dengan aman
-   dan bagikan password lewat kanal privat. Untuk mengaktifkan fitur
+   XLS dengan sheet terpisah per role dari `/operator/accounts`. Unduhan tidak
+   mengubah password akun; kolom password dibiarkan kosong karena password lama
+   tidak dapat dibaca kembali dari Supabase. File memuat nama lengkap, ID pengguna,
+   password (kosong), regu, dan Pinru untuk peserta. Untuk mengaktifkan fitur
    tersebut, tambahkan key admin Supabase privat ke environment server (jangan
    gunakan prefix `NEXT_PUBLIC_`):
 

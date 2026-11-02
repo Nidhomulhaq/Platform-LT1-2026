@@ -1786,7 +1786,7 @@ function escapeXml(value: string) {
 }
 
 function createAccountsWorkbook(
-  accounts: Array<ManagedAccount & { password: string }>,
+  accounts: ManagedAccount[],
   teams: Team[],
 ) {
   const roles: Role[] = ["peserta", "panitia", "juri", "operator"];
@@ -1800,7 +1800,7 @@ function createAccountsWorkbook(
           return [
             account.fullName,
             account.loginId,
-            account.password,
+            "",
             team?.name ?? "",
             account.role === "peserta" ? (account.isPinru ? "Ya" : "Tidak") : "",
           ];
@@ -1842,16 +1842,6 @@ function isManagedAccount(value: unknown): value is ManagedAccount {
     (typeof value.teamId === "string" || value.teamId === null) &&
     typeof value.isPinru === "boolean" &&
     typeof value.isActive === "boolean"
-  );
-}
-
-function isExportedAccount(
-  value: unknown,
-): value is ManagedAccount & { password: string } {
-  return (
-    isJsonRecord(value) &&
-    typeof value.password === "string" &&
-    isManagedAccount(value)
   );
 }
 
@@ -1947,36 +1937,19 @@ function AccountManagement({ notify }: { notify: Notify }) {
   }, [data.schools, schoolId]);
 
   const downloadAccounts = async () => {
-    if (
-      !window.confirm(
-        "Untuk mengekspor XLS, password semua akun terdaftar akan direset. Password lama tidak dapat dipulihkan. Lanjutkan?",
-      )
-    ) {
-      return;
-    }
-
     setExportingAccounts(true);
     try {
-      const payload = await request("POST", {
-        action: "export-passwords",
-        confirmation: "reset-all-passwords",
-      });
+      const payload = await request("GET");
       if (
         !Array.isArray(payload.accounts) ||
-        !payload.accounts.every(isExportedAccount) ||
-        !Array.isArray(payload.failedUserIds) ||
-        !payload.failedUserIds.every(
-          (userId): userId is string => typeof userId === "string",
-        )
+        !payload.accounts.every(isManagedAccount)
       ) {
         throw new Error("Respons ekspor akun tidak valid.");
       }
 
       const exportedAccounts = payload.accounts;
       if (!exportedAccounts.length) {
-        throw new Error(
-          "Tidak ada password akun yang berhasil direset. File XLS tidak dibuat.",
-        );
+        throw new Error("Tidak ada akun terdaftar untuk diekspor.");
       }
 
       const workbook = createAccountsWorkbook(exportedAccounts, data.teams);
@@ -1990,19 +1963,11 @@ function AccountManagement({ notify }: { notify: Notify }) {
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-      const failedCount = payload.failedUserIds.length;
-      if (failedCount) {
-        notify(
-          `XLS berisi ${exportedAccounts.length} akun. ${failedCount} akun gagal direset dan tidak disertakan.`,
-          true,
-        );
-      } else {
-        notify(
-          `XLS ${exportedAccounts.length} akun berhasil diunduh. Simpan file dengan aman dan bagikan password secara privat.`,
-        );
-      }
+      notify(
+        `XLS ${exportedAccounts.length} akun berhasil diunduh. Kolom password dikosongkan karena password lama tidak dapat dipulihkan.`,
+      );
     } catch (error) {
-      console.error("Gagal mengekspor akun dan mereset password.", error);
+      console.error("Gagal mengekspor akun.", error);
       notify(
         error instanceof Error ? error.message : "XLS akun gagal dibuat.",
         true,

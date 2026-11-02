@@ -340,69 +340,6 @@ export async function POST(request: NextRequest) {
   const auth = await getOperator();
   if ("error" in auth) return auth.error;
   const body = await parseBody(request);
-  if (body?.action === "export-passwords") {
-    if (body.confirmation !== "reset-all-passwords") {
-      return jsonResponse(
-        { error: "Konfirmasi reset password seluruh akun tidak valid." },
-        400,
-      );
-    }
-
-    try {
-      const accounts = await getAccounts(auth.projectUrl);
-      const passwords: Record<string, string> = {};
-      const failedUserIds: string[] = [];
-
-      for (const account of accounts) {
-        const password = randomBytes(24).toString("base64url");
-        try {
-          await adminRequest(
-            auth.projectUrl,
-            `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
-            "PUT",
-            { password },
-          );
-          passwords[account.id] = password;
-        } catch (error) {
-          console.error(
-            `Gagal mereset password akun ${account.id} untuk ekspor.`,
-            error instanceof Error ? error.message : "Kesalahan tidak diketahui.",
-          );
-          failedUserIds.push(account.id);
-        }
-      }
-
-      return NextResponse.json(
-        {
-          accounts: accounts.flatMap((account) =>
-            passwords[account.id]
-              ? [{ ...account, password: passwords[account.id] }]
-              : [],
-          ),
-          failedUserIds,
-        },
-        {
-          status: failedUserIds.length ? 207 : 200,
-          headers: { "Cache-Control": "no-store" },
-        },
-      );
-    } catch (error) {
-      console.error(
-        "Gagal memuat akun untuk ekspor password.",
-        error instanceof Error ? error.message : "Kesalahan tidak diketahui.",
-      );
-      return jsonResponse(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Password akun gagal disiapkan untuk ekspor.",
-        },
-        error instanceof SupabaseAdminError ? error.status : 500,
-      );
-    }
-  }
-
   if (
     !body ||
     body.action !== "create" ||
