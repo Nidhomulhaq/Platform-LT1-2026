@@ -12,7 +12,7 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { loginIdToAuthEmail } from "@/lib/auth/login-id";
-import type { Database } from "@/lib/supabase/database.types";
+import type { Database, Json } from "@/lib/supabase/database.types";
 
 export type Role = "operator" | "panitia" | "juri" | "peserta";
 export type ScoreStatus =
@@ -22,11 +22,17 @@ export type ScoreStatus =
   | "revision_needed";
 export type TaskType = "cbt" | "upload" | "live";
 
+export interface ScoringCriterion {
+  id: string;
+  name: string;
+}
+
 export interface Competition {
   id: string;
   title: string;
   description: string;
   taskType: TaskType;
+  criteria: ScoringCriterion[];
   isActive: boolean;
 }
 
@@ -80,6 +86,9 @@ export interface ScoreRecord {
   id: string;
   competitionId: string;
   teamId: string;
+  judgeId?: string | null;
+  judgeName?: string;
+  criterionScores?: Record<string, number>;
   score: number | null;
   status: ScoreStatus;
   feedback: string;
@@ -203,6 +212,7 @@ export const COMPETITIONS: Competition[] = [
     title: "Pionering",
     description: "Bangun tandu dan menara dari tongkat serta tali.",
     taskType: "live",
+    criteria: [],
     isActive: true,
   },
   {
@@ -210,6 +220,7 @@ export const COMPETITIONS: Competition[] = [
     title: "Sandi dan Morse",
     description: "Pecahkan pesan sandi dan kirim jawaban lewat Morse.",
     taskType: "cbt",
+    criteria: [],
     isActive: true,
   },
   {
@@ -217,6 +228,7 @@ export const COMPETITIONS: Competition[] = [
     title: "Pertolongan Pertama",
     description: "Tunjukkan langkah pertolongan pertama pada korban.",
     taskType: "upload",
+    criteria: [],
     isActive: true,
   },
   {
@@ -224,6 +236,7 @@ export const COMPETITIONS: Competition[] = [
     title: "Sandi Pramuka",
     description: "Unggah lembar jawaban sandi yang sudah dikerjakan.",
     taskType: "upload",
+    criteria: [],
     isActive: true,
   },
   {
@@ -231,6 +244,7 @@ export const COMPETITIONS: Competition[] = [
     title: "Pengetahuan Islamiyah",
     description: "Jawab 20 pertanyaan pengetahuan umum dan keislaman.",
     taskType: "cbt",
+    criteria: [],
     isActive: true,
   },
   {
@@ -238,6 +252,7 @@ export const COMPETITIONS: Competition[] = [
     title: "Yel-yel Regu",
     description: "Tampilkan yel-yel regu di depan dewan juri.",
     taskType: "live",
+    criteria: [],
     isActive: true,
   },
 ];
@@ -642,12 +657,16 @@ async function loadSupabaseWorkspace(
         title: competition.title,
         description: competition.description,
         taskType: competition.task_type,
+        criteria: parseScoringCriteria(competition.criteria),
         isActive: competition.is_active,
       })),
       scores: (scoresResult.data ?? []).map((score) => ({
         id: score.id,
         competitionId: score.competitionId,
         teamId: score.teamId,
+        judgeId: score.judgeId,
+        judgeName: score.judgeName,
+        criterionScores: parseCriterionScores(score.criterionScores),
         score: typeof score.score === "number" ? score.score : null,
         status: score.status,
         feedback: score.feedback,
@@ -695,6 +714,7 @@ interface WorkspaceContextValue {
     teamId: string,
     competitionId: string,
     score: number,
+    criterionScores: Record<string, number>,
     feedback: string,
     status: ScoreStatus,
   ) => Promise<void>;
@@ -721,6 +741,42 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Terjadi kesalahan yang tidak diketahui.";
+}
+
+function parseScoringCriteria(value: Json): ScoringCriterion[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Kriteria penilaian mata lomba tidak valid.");
+  }
+  return value.map((criterion) => {
+    if (
+      typeof criterion !== "object" ||
+      criterion === null ||
+      Array.isArray(criterion) ||
+      typeof criterion.id !== "string" ||
+      typeof criterion.name !== "string"
+    ) {
+      throw new Error("Format kriteria penilaian mata lomba tidak valid.");
+    }
+    return { id: criterion.id, name: criterion.name };
+  });
+}
+
+function parseCriterionScores(value: Json): Record<string, number> {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    throw new Error("Nilai kriteria dari Supabase tidak valid.");
+  }
+  const scores: Record<string, number> = {};
+  for (const [criterionId, score] of Object.entries(value)) {
+    if (typeof score !== "number" || score < 0 || score > 100) {
+      throw new Error("Nilai kriteria dari Supabase tidak valid.");
+    }
+    scores[criterionId] = score;
+  }
+  return scores;
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -858,6 +914,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             title: competition.title,
             description: competition.description,
             task_type: competition.taskType,
+            criteria: competition.criteria.map((criterion) => ({
+              id: criterion.id,
+              name: criterion.name,
+            })),
             is_active: competition.isActive,
           });
           if (error) throw error;
@@ -985,36 +1045,61 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         }));
       },
-      updateScore: async (teamId, competitionId, score, feedback, status) => {
-        let scoreId = `score-${teamId}-${competitionId}`;
+      updateScore: async (
+        teamId,
+        competitionId,
+        score,
+        criterionScores,
+        feedback,
+        status,
+      ) => {
+        const judgeId = session?.user.id ?? CURRENT_USER_ID;
+        let scoreId = `score-${teamId}-${competitionId}-${judgeId}`;
         if (supabase && session) {
-          const { data: saved, error } = await supabase
-            .from("scores")
-            .upsert(
-              {
+          const existing = data.scores.find(
+            (record) =>
+              record.teamId === teamId &&
+              record.competitionId === competitionId &&
+              record.judgeId === session.user.id,
+          );
+          const values = {
+            score_value: score,
+            criterion_scores: criterionScores,
+            feedback_notes: feedback,
+            status,
+          };
+          const query = existing
+            ? supabase
+                .from("scores")
+                .update(values)
+                .eq("id", existing.id)
+            : supabase.from("scores").insert({
                 team_id: teamId,
                 competition_id: competitionId,
-                score_value: score,
-                feedback_notes: feedback,
-                status,
+                ...values,
                 juri_id: session.user.id,
-              },
-              { onConflict: "competition_id,team_id" },
-            )
-            .select("id")
-            .single();
+              });
+          const { data: saved, error } = await query.select("id").single();
           if (error) throw error;
           scoreId = saved.id;
         }
         setData((current) => {
           const existing = current.scores.find(
             (record) =>
-              record.teamId === teamId && record.competitionId === competitionId,
+              record.teamId === teamId &&
+              record.competitionId === competitionId &&
+              (record.judgeId === judgeId ||
+                (!isConnected && !record.judgeId)),
           );
           const nextRecord = {
             id: existing?.id ?? scoreId,
             teamId,
             competitionId,
+            judgeId: judgeId || null,
+            judgeName:
+              current.judges.find((judge) => judge.id === judgeId)?.name ??
+              "",
+            criterionScores,
             score,
             feedback,
             status,

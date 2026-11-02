@@ -30,6 +30,7 @@ export type Database = {
         description: string;
         task_type: Database["public"]["Enums"]["task_type"];
         max_score: number;
+        criteria: Json;
         is_active: boolean;
         created_at: string;
         updated_at: string;
@@ -82,6 +83,7 @@ export type Database = {
         team_id: string;
         juri_id: string | null;
         score_value: number;
+        criterion_scores: Json;
         status: Database["public"]["Enums"]["score_status"];
         feedback_notes: string;
         created_at: string;
@@ -119,6 +121,9 @@ export type Database = {
           id: string;
           competitionId: string;
           teamId: string;
+          judgeId: string | null;
+          judgeName: string;
+          criterionScores: Json;
           score: number | null;
           status: Database["public"]["Enums"]["score_status"];
           feedback: string;

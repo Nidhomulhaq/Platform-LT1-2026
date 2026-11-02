@@ -37,10 +37,13 @@ dan jalankan hasilnya memakai `npm run start`.
    setelah dua migration sebelumnya. Migration ini menambahkan penugasan Panitia,
    status akun aktif, penetapan Pinru, dan pembatasan akses berbasis role melalui RLS.
 5. Jalankan migration
+   [`supabase/migrations/20261102040331_competition_scoring_criteria.sql`](./supabase/migrations/20261102040331_competition_scoring_criteria.sql)
+   untuk menyimpan kriteria tiap mata lomba serta nilai per kriteria dan per juri.
+6. Jalankan migration
    [`supabase/migrations/20261102050000_participant_school_assignment.sql`](./supabase/migrations/20261102050000_participant_school_assignment.sql)
    untuk memindahkan relasi pangkalan dari regu ke profil peserta. Migration ini
    mempertahankan pangkalan peserta yang sudah ada dan mengubah verifikasi sertifikat.
-6. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
+7. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
    dan kata sandi; alamat email internal Supabase tidak perlu diketahui pengguna.
    Operator dapat membuat atau menghapus akun, mengubah role/regu, menonaktifkan
    akun, memulai reset kata sandi, memfilter akun berdasarkan role, dan mengunduh

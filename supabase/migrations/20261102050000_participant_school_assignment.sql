@@ -44,13 +44,13 @@ begin
     'scores', coalesce(
       jsonb_agg(
         jsonb_build_object(
-          'id', sc.id,
+          'id', c.id || ':' || t.id,
           'competitionId', c.id,
           'title', c.title,
           'score', sc.score_value,
-          'status', sc.status
+          'status', 'approved'
         ) order by c.created_at
-      ) filter (where sc.id is not null),
+      ) filter (where c.id is not null),
       '[]'::jsonb
     ),
     'issuedAt', es.certificates_published_at
@@ -62,7 +62,15 @@ begin
   join public.schools as s on s.id = p.school_id
   cross join public.event_settings as es
   left join public.competitions as c on true
-  left join public.scores as sc
+  left join (
+    select
+      competition_id,
+      team_id,
+      sum(score_value) filter (where status = 'approved') as score_value,
+      count(*) filter (where status = 'approved') as approved_count
+    from public.scores
+    group by competition_id, team_id
+  ) as sc
     on sc.competition_id = c.id
     and sc.team_id = t.id
   where p.id = target_user_id
@@ -72,7 +80,8 @@ begin
     s.name, s.school_type, s.headmaster_name, s.headmaster_title,
     s.pembina_name, s.pembina_title, es.certificates_published_at
   having count(c.id) > 0
-    and count(sc.id) filter (where sc.status = 'approved') = count(c.id);
+    and count(c.id) filter (where coalesce(sc.approved_count, 0) > 0)
+      = count(c.id);
 
   return certificate;
 end;

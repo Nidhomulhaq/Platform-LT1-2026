@@ -20,7 +20,7 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
 | ----- | ----- | ----- | 
 | **Operator Pusat** | `operator` | Mengelola akun (membuat, menghapus, menonaktifkan, menetapkan role, memetakan anggota ke regu, memfilter daftar menurut role, mengunduh daftar XLS per role, dan memulai reset kata sandi melalui alur aman), data pangkalan dan regu, mata lomba, isi instruksi, serta penugasan Panitia dan Juri. Meninjau nilai dengan menyetujui atau meminta revisi, menerbitkan leaderboard, dan mempublikasikan sertifikat. Pengelolaan akun harus menggunakan backend tepercaya; secret key Supabase tidak boleh dikirim ke peramban. |
 | **Panitia** | `panitia` | Pada pos/mata lomba yang ditugaskan, membuka atau menyampaikan instruksi yang disiapkan Operator, mencatat kehadiran, dan memantau status pengumpulan tugas. |
-| **Juri** | `juri` | Pada mata lomba yang ditugaskan, menilai regu berdasarkan rubrik, menyimpan draf, memberi catatan, dan mengirim nilai kepada Operator untuk ditinjau. Juri dapat memperbarui nilai sampai disetujui; perubahan yang dikirim kembali berstatus menunggu tinjauan. |
+| **Juri** | `juri` | Pada mata lomba yang ditugaskan, memberi nilai 0–100 pada setiap kriteria, menyimpan draf, memberi catatan, dan mengirim akumulasi nilainya kepada Operator untuk ditinjau. Juri hanya melihat penilaian miliknya dan dapat memperbaruinya sampai disetujui. |
 | **Peserta** | `peserta` | Melihat tugas dan progres regu, mengoleksi lencana, melihat nilai regu setelah disetujui, serta mengakses sertifikat setelah diterbitkan. Leaderboard hanya terlihat setelah dirilis Operator. Hanya Pinru yang dapat mengirim atau memperbarui tugas atas nama regu; anggota lain hanya melihat status. |
 
 ### Aturan Otorisasi yang Berlaku
@@ -315,7 +315,9 @@ CREATE POLICY "Users Can Update Own Profile" ON public.profiles FOR UPDATE USING
 
 * **Manajemen Penugasan**: Menetapkan Panitia pada pos/mata lomba dan Juri pada mata lomba. Perubahan penugasan segera membatasi data yang terlihat dan aksi yang dapat dilakukan.
 
-* **Manajemen Lomba & Instruksi**: Operator mengelola mata lomba dan isi instruksi tugas; Panitia hanya merilis/menyampaikan instruksi yang telah disiapkan.
+* **Manajemen Lomba & Instruksi**: Operator mengelola mata lomba, kriteria penilaian, dan isi instruksi tugas; Panitia hanya merilis/menyampaikan instruksi yang telah disiapkan. Setiap kriteria dinilai 0–100.
+
+* **Penilaian Juri**: Juri memberi nilai 0–100 pada setiap kriteria. Nilai tiap juri adalah akumulasi kriterianya; akumulasi nilai juri yang disetujui menjadi nilai mata lomba regu. Operator dapat meninjau rincian nilai setiap juri dan kriterianya.
 
 * **Peninjauan Nilai (Review Pipeline)**:
 

@@ -30,12 +30,14 @@ import {
   Menu,
   Medal,
   MessageSquareText,
+  Plus,
   QrCode,
   Search,
   Send,
   ShieldCheck,
   Signpost,
   Star,
+  Trash2,
   Trophy,
   Users,
   UserRound,
@@ -590,9 +592,47 @@ function getScore(
   teamId: string,
   competitionId: string,
 ) {
-  return records.find(
+  const matching = records.filter(
     (record) =>
       record.teamId === teamId && record.competitionId === competitionId,
+  );
+  if (matching.length < 2) return matching[0];
+
+  const approved = matching.filter((record) => record.status === "approved");
+  const status: ScoreStatus = matching.some(
+    (record) => record.status === "revision_needed",
+  )
+    ? "revision_needed"
+    : matching.some((record) => record.status === "pending_review")
+      ? "pending_review"
+      : matching.every((record) => record.status === "approved")
+        ? "approved"
+        : "draft";
+  return {
+    ...matching[0],
+    score: approved.length
+      ? approved.reduce((total, record) => total + (record.score ?? 0), 0)
+      : null,
+    status,
+    feedback: matching
+      .map((record) => record.feedback)
+      .filter(Boolean)
+      .join(" · "),
+  };
+}
+
+function getJudgeScore(
+  records: ScoreRecord[],
+  teamId: string,
+  competitionId: string,
+  judgeId: string,
+  isConnected: boolean,
+) {
+  return records.find(
+    (record) =>
+      record.teamId === teamId &&
+      record.competitionId === competitionId &&
+      (record.judgeId === judgeId || (!isConnected && !record.judgeId)),
   );
 }
 
@@ -612,12 +652,23 @@ function approvedScoresForTeam(
   teamId: string,
   competitionIds?: string[],
 ) {
-  return records.filter(
-    (record) =>
-      record.teamId === teamId &&
-      record.status === "approved" &&
-      (!competitionIds || competitionIds.includes(record.competitionId)),
-  );
+  const relevantCompetitionIds = [
+    ...new Set(
+      records
+        .filter(
+          (record) =>
+            record.teamId === teamId &&
+            (!competitionIds || competitionIds.includes(record.competitionId)),
+        )
+        .map((record) => record.competitionId),
+    ),
+  ];
+  return relevantCompetitionIds
+    .map((competitionId) => getScore(records, teamId, competitionId))
+    .filter(
+      (score): score is ScoreRecord =>
+        score?.status === "approved" && score.score !== null,
+    );
 }
 
 function taskStatus(
@@ -709,7 +760,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
           <section className="panel panel-pad">
             <SectionHeading
               title="Lencana regu"
-              detail="Lencana diberikan untuk nilai minimal 80."
+              detail="Lencana diberikan untuk akumulasi minimal 80 poin."
               action={
                 <span className="role-chip">
                   {badgeCount} dari {data.competitions.length} diraih
@@ -782,7 +833,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
                     <StatusPill status={status} />
                     <span className="score-value">
                       {score && score.status === "approved" ? score.score : "—"}
-                      {score && score.status === "approved" ? <span> / 100</span> : null}
+                      {score && score.status === "approved" ? <span> poin</span> : null}
                     </span>
                     <Link
                       className="row-action-link"
@@ -1129,7 +1180,7 @@ function ParticipantScoreRecap() {
               />
               <strong className="participant-score-value">
                 {score?.status === "approved" ? score.score ?? "—" : "—"}
-                <span>{score?.status === "approved" ? " / 100" : ""}</span>
+                <span>{score?.status === "approved" ? " poin" : ""}</span>
               </strong>
             </div>
           ))}
@@ -1668,7 +1719,8 @@ function OperatorDashboard() {
                   <tr>
                     <th>Regu & pangkalan</th>
                     <th>Mata lomba</th>
-                    <th className="numeric">Nilai</th>
+                    <th>Juri</th>
+                    <th className="numeric">Akumulasi juri</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -1683,6 +1735,7 @@ function OperatorDashboard() {
                           <span className="table-secondary">{team?.category}</span>
                         </td>
                         <td>{competition?.title ?? "Mata lomba"}</td>
+                        <td>{score.judgeName || "Juri"}</td>
                         <td className="numeric">{score.score ?? "—"}</td>
                         <td>
                           <StatusPill status={score.status} />
@@ -2582,7 +2635,7 @@ function OperatorScores({ notify }: { notify: Notify }) {
     const team = getTeam(data, score.teamId);
     const competition = getCompetition(data, score.competitionId);
     const matchesFilter = filter === "all" || score.status === filter;
-    const matchesSearch = `${team?.name ?? ""} ${competition?.title ?? ""}`
+    const matchesSearch = `${team?.name ?? ""} ${competition?.title ?? ""} ${score.judgeName ?? ""}`
       .toLowerCase()
       .includes(search.toLowerCase());
     return matchesFilter && matchesSearch;
@@ -2638,7 +2691,7 @@ function OperatorScores({ notify }: { notify: Notify }) {
       <section className="panel panel-pad">
         <SectionHeading
           title="Antrean penilaian"
-          detail={`${visibleScores.length} nilai ditampilkan dari ${data.scores.length} catatan.`}
+          detail={`${visibleScores.length} nilai juri ditampilkan. Akumulasi lomba menjumlahkan nilai juri yang sudah disetujui.`}
         />
         <div className="filter-row">
           <div className="search-control">
@@ -2679,7 +2732,9 @@ function OperatorScores({ notify }: { notify: Notify }) {
                 <tr>
                   <th>Regu</th>
                   <th>Mata lomba</th>
-                  <th className="numeric">Nilai</th>
+                  <th>Juri</th>
+                  <th className="numeric">Akumulasi juri</th>
+                  <th className="numeric">Akumulasi lomba</th>
                   <th>Catatan juri</th>
                   <th>Status</th>
                   <th>Aksi</th>
@@ -2689,6 +2744,16 @@ function OperatorScores({ notify }: { notify: Notify }) {
                 {visibleScores.map((score) => {
                   const team = getTeam(data, score.teamId);
                   const competition = getCompetition(data, score.competitionId);
+                  const approvedScores = data.scores.filter(
+                    (record) =>
+                      record.teamId === score.teamId &&
+                      record.competitionId === score.competitionId &&
+                      record.status === "approved",
+                  );
+                  const approvedScoreTotal = approvedScores.reduce(
+                    (total, record) => total + (record.score ?? 0),
+                    0,
+                  );
                   return (
                     <tr key={score.id}>
                       <td>
@@ -2698,7 +2763,36 @@ function OperatorScores({ notify }: { notify: Notify }) {
                         </span>
                       </td>
                       <td>{competition?.title}</td>
-                      <td className="numeric">{score.score ?? "—"}</td>
+                      <td>{score.judgeName || "Juri"}</td>
+                      <td className="numeric">
+                        <strong>{score.score ?? "—"}</strong>
+                        {competition?.criteria.length ? (
+                          <span className="table-secondary score-breakdown">
+                            {competition.criteria
+                              .map((criterion) => {
+                                const value =
+                                  score.criterionScores?.[criterion.id];
+                                return value === undefined
+                                  ? null
+                                  : `${criterion.name}: ${value}`;
+                              })
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="numeric">
+                        {approvedScores.length ? (
+                          <>
+                            <strong>{approvedScoreTotal}</strong>
+                            <span className="table-secondary">
+                              {approvedScores.length} juri disetujui
+                            </span>
+                          </>
+                        ) : (
+                          "Menunggu"
+                        )}
+                      </td>
                       <td>{score.feedback || "Belum ada catatan"}</td>
                       <td>
                         <StatusPill status={score.status} />
@@ -3026,7 +3120,14 @@ function JuryScoring({ notify }: { notify: Notify }) {
     judgeCompetitions[0]?.id ?? "",
   );
   const [scoreDrafts, setScoreDrafts] = React.useState<
-    Record<string, { score: string; feedback: string }>
+    Record<
+      string,
+      {
+        criterionScores: Record<string, string>;
+        score: string;
+        feedback: string;
+      }
+    >
   >({});
   React.useEffect(() => {
     if (!judgeCompetitions.some((item) => item.id === competitionId)) {
@@ -3037,10 +3138,27 @@ function JuryScoring({ notify }: { notify: Notify }) {
   const competition = judgeCompetitions.find((item) => item.id === competitionId);
 
   const draftFor = (teamId: string) => {
-    const saved = getScore(data.scores, teamId, competitionId);
+    const saved = getJudgeScore(
+      data.scores,
+      teamId,
+      competitionId,
+      currentUserId,
+      isConnected,
+    );
     return (
       scoreDrafts[teamId] ?? {
-        score: saved?.score === null || !saved ? "" : String(saved.score),
+        criterionScores: Object.fromEntries(
+          (competition?.criteria ?? []).map((criterion) => [
+            criterion.id,
+            saved?.criterionScores?.[criterion.id] === undefined
+              ? ""
+              : String(saved.criterionScores[criterion.id]),
+          ]),
+        ),
+        score:
+          saved?.score === null || !saved || competition?.criteria.length
+            ? ""
+            : String(saved.score),
         feedback: saved?.feedback ?? "",
       }
     );
@@ -3048,26 +3166,62 @@ function JuryScoring({ notify }: { notify: Notify }) {
 
   const updateDraft = (
     teamId: string,
-    property: "score" | "feedback",
+    property: "score" | "feedback" | "criterionScore",
     value: string,
+    criterionId?: string,
   ) => {
     setScoreDrafts((drafts) => ({
       ...drafts,
       [teamId]: {
         ...draftFor(teamId),
-        [property]: value,
+        ...(property === "criterionScore" && criterionId
+          ? {
+              criterionScores: {
+                ...draftFor(teamId).criterionScores,
+                [criterionId]: value,
+              },
+            }
+          : property === "feedback"
+            ? { feedback: value }
+            : { score: value }),
       },
     }));
   };
 
   const save = async (teamId: string, status: ScoreStatus) => {
     const draft = draftFor(teamId);
-    const value = Number(draft.score);
-    if (!Number.isFinite(value) || value < 0 || value > 100) {
-      notify("Masukkan nilai antara 0 sampai 100.", true);
-      return;
+    const criterionScores: Record<string, number> = {};
+    let value = 0;
+    if (competition?.criteria.length) {
+      for (const criterion of competition.criteria) {
+        const score = Number(draft.criterionScores[criterion.id]);
+        if (
+          draft.criterionScores[criterion.id] === "" ||
+          !Number.isFinite(score) ||
+          score < 0 ||
+          score > 100
+        ) {
+          notify(`Masukkan nilai 0–100 untuk kriteria “${criterion.name}”.`, true);
+          return;
+        }
+        criterionScores[criterion.id] = score;
+        value += score;
+      }
+      value = Math.round(value * 100) / 100;
+    } else {
+      value = Number(draft.score);
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        notify("Masukkan nilai antara 0 sampai 100.", true);
+        return;
+      }
     }
-    const saved = getScore(data.scores, teamId, competitionId);
+    const saved = getJudgeScore(
+      data.scores,
+      teamId,
+      competitionId,
+      currentUserId,
+      isConnected,
+    );
     const nextStatus =
       saved?.status === "pending_review" && status === "draft"
         ? "pending_review"
@@ -3077,6 +3231,7 @@ function JuryScoring({ notify }: { notify: Notify }) {
         teamId,
         competitionId,
         value,
+        criterionScores,
         draft.feedback.trim(),
         nextStatus,
       );
@@ -3094,7 +3249,9 @@ function JuryScoring({ notify }: { notify: Notify }) {
   };
 
   const selectedScores = data.scores.filter(
-    (score) => score.competitionId === competitionId,
+    (score) =>
+      score.competitionId === competitionId &&
+      (!isConnected || score.judgeId === currentUserId),
   );
   const pendingCount = selectedScores.filter(
     (score) => score.status === "pending_review",
@@ -3151,8 +3308,8 @@ function JuryScoring({ notify }: { notify: Notify }) {
         <div className="notice" role="note">
           <CircleHelp aria-hidden="true" />
           <p>
-            Nilai yang dikirim tetap dapat diperbarui sampai operator
-            menyetujuinya. Setelah disetujui, nilai terkunci untuk juri.
+            Nilai tiap kriteria dijumlahkan menjadi akumulasi nilai juri.
+            Setelah disetujui operator, nilai terkunci untuk juri.
           </p>
         </div>
         <div className="table-scroll" style={{ marginTop: 14 }}>
@@ -3160,7 +3317,14 @@ function JuryScoring({ notify }: { notify: Notify }) {
             <thead>
               <tr>
                 <th>Regu peserta</th>
-                <th>Nilai (0–100)</th>
+                {competition?.criteria.length ? (
+                  competition.criteria.map((criterion) => (
+                    <th key={criterion.id}>{criterion.name} (0–100)</th>
+                  ))
+                ) : (
+                  <th>Nilai (0–100)</th>
+                )}
+                <th className="numeric">Akumulasi</th>
                 <th>Catatan evaluasi</th>
                 <th>Status</th>
                 <th>Aksi</th>
@@ -3168,33 +3332,92 @@ function JuryScoring({ notify }: { notify: Notify }) {
             </thead>
             <tbody>
               {data.teams.map((team) => {
-                const saved = getScore(data.scores, team.id, competitionId);
+                const saved = getJudgeScore(
+                  data.scores,
+                  team.id,
+                  competitionId,
+                  currentUserId,
+                  isConnected,
+                );
                 const draft = draftFor(team.id);
                 const disabled = saved?.status === "approved";
+                const enteredScores = competition?.criteria.map(
+                  (criterion) => draft.criterionScores[criterion.id],
+                );
+                const total = enteredScores?.every((score) => score !== "")
+                  ? Math.round(
+                      enteredScores.reduce(
+                        (sum, score) => sum + Number(score),
+                        0,
+                      ) * 100,
+                    ) / 100
+                  : null;
                 return (
                   <tr key={team.id}>
                     <td>
                       <span className="table-primary">{team.name}</span>
                       <span className="table-secondary">{team.category}</span>
                     </td>
-                    <td>
-                      <label className="sr-only" htmlFor={`score-${team.id}`}>
-                        Nilai regu {team.name}
-                      </label>
-                      <input
-                        id={`score-${team.id}`}
-                        className="score-input"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        inputMode="decimal"
-                        value={draft.score}
-                        disabled={disabled}
-                        onChange={(event) =>
-                          updateDraft(team.id, "score", event.target.value)
-                        }
-                      />
+                    {competition?.criteria.length ? (
+                      competition.criteria.map((criterion) => (
+                        <td key={criterion.id}>
+                          <label
+                            className="sr-only"
+                            htmlFor={`score-${team.id}-${criterion.id}`}
+                          >
+                            Nilai {criterion.name} untuk regu {team.name}
+                          </label>
+                          <input
+                            id={`score-${team.id}-${criterion.id}`}
+                            className="score-input"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            inputMode="decimal"
+                            value={draft.criterionScores[criterion.id] ?? ""}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              updateDraft(
+                                team.id,
+                                "criterionScore",
+                                event.target.value,
+                                criterion.id,
+                              )
+                            }
+                          />
+                        </td>
+                      ))
+                    ) : (
+                      <td>
+                        <label className="sr-only" htmlFor={`score-${team.id}`}>
+                          Nilai regu {team.name}
+                        </label>
+                        <input
+                          id={`score-${team.id}`}
+                          className="score-input"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          inputMode="decimal"
+                          value={draft.score}
+                          disabled={disabled}
+                          onChange={(event) =>
+                            updateDraft(team.id, "score", event.target.value)
+                          }
+                        />
+                      </td>
+                    )}
+                    <td className="numeric">
+                      <strong>
+                        {competition?.criteria.length
+                          ? (total ?? "—")
+                          : draft.score || "—"}
+                      </strong>
+                      {competition?.criteria.length ? (
+                        <span className="table-secondary">poin</span>
+                      ) : null}
                     </td>
                     <td>
                       <label className="sr-only" htmlFor={`feedback-${team.id}`}>
@@ -3285,6 +3508,7 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
   const [competitionId, setCompetitionId] = React.useState("");
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
+  const [criteria, setCriteria] = React.useState([""]);
   const [selectedJudges, setSelectedJudges] = React.useState<
     Record<string, string>
   >({});
@@ -3322,24 +3546,42 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
       <section className="panel panel-pad">
         <SectionHeading
           title="Tambah mata lomba"
-          detail="ID akan menjadi bagian dari tautan tugas dan kode QR."
+          detail="Tentukan kriteria yang akan dinilai juri untuk mata lomba ini."
         />
         <form
           className="form-stack"
           onSubmit={(event) => {
             event.preventDefault();
+            const names = criteria.map((name) => name.trim());
+            if (names.some((name) => !name)) {
+              notify("Lengkapi semua kriteria penilaian.", true);
+              return;
+            }
+            if (names.some((name) => name.length > 120)) {
+              notify("Nama kriteria maksimal 120 karakter.", true);
+              return;
+            }
+            if (new Set(names.map((name) => name.toLowerCase())).size !== names.length) {
+              notify("Nama kriteria penilaian tidak boleh duplikat.", true);
+              return;
+            }
             setCreating(true);
             void createCompetition({
               id: competitionId,
               title: title.trim(),
               description: description.trim(),
               taskType,
+              criteria: names.map((name) => ({
+                id: crypto.randomUUID(),
+                name,
+              })),
               isActive: false,
             })
               .then(() => {
                 setCompetitionId("");
                 setTitle("");
                 setDescription("");
+                setCriteria([""]);
                 notify("Mata lomba berhasil ditambahkan dalam status belum dirilis.");
               })
               .catch((error: unknown) => {
@@ -3393,6 +3635,56 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
               />
             </label>
           </div>
+          <fieldset className="form-stack criteria-editor">
+            <legend className="field-label">Kriteria penilaian</legend>
+            <p className="field-hint">
+              Juri memberi nilai 0–100 untuk setiap kriteria. Nilai akhir juri
+              adalah jumlah semua kriteria.
+            </p>
+            {criteria.map((criterion, index) => (
+              <div className="criteria-editor-row" key={index}>
+                <label>
+                  <span className="field-label">Kriteria {index + 1}</span>
+                  <input
+                    className="field"
+                    value={criterion}
+                    maxLength={120}
+                    onChange={(event) =>
+                      setCriteria((current) =>
+                        current.map((name, currentIndex) =>
+                          currentIndex === index ? event.target.value : name,
+                        ),
+                      )
+                    }
+                    placeholder="Contoh: Kerapian"
+                    required
+                  />
+                </label>
+                <button
+                  className="button button-secondary button-small"
+                  type="button"
+                  aria-label={`Hapus kriteria ${index + 1}`}
+                  disabled={criteria.length === 1}
+                  onClick={() =>
+                    setCriteria((current) =>
+                      current.filter((_, currentIndex) => currentIndex !== index),
+                    )
+                  }
+                >
+                  <Trash2 aria-hidden="true" />
+                  Hapus
+                </button>
+              </div>
+            ))}
+            <button
+              className="button button-secondary button-small"
+              type="button"
+              onClick={() => setCriteria((current) => [...current, ""])}
+            >
+              <Plus aria-hidden="true" />
+              Tambah kriteria
+            </button>
+          </fieldset>
           <button className="button button-small" type="submit" disabled={creating}>
             {creating ? "Menyimpan…" : "Tambah mata lomba"}
           </button>
@@ -3416,6 +3708,14 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
                       : competition.taskType === "cbt"
                         ? "CBT"
                         : "Unggah"}
+                  </span>
+                  <span>
+                    Kriteria:{" "}
+                    {competition.criteria.length
+                      ? competition.criteria
+                          .map((criterion) => criterion.name)
+                          .join(", ")
+                      : "Belum diatur"}
                   </span>
                   <label
                     className="sr-only"
