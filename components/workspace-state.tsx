@@ -44,13 +44,13 @@ export interface Team {
   id: string;
   name: string;
   category: "Putra" | "Putri";
-  schoolId: string;
 }
 
 export interface Participant {
   id: string;
   name: string;
   teamId: string;
+  schoolId: string | null;
   isPinru: boolean;
 }
 
@@ -129,17 +129,20 @@ const schoolRecords: School[] = [
 ];
 
 const teamRecords: Team[] = [
-  { id: "team-elang", name: "Elang", category: "Putra", schoolId: "school-mts" },
-  {
-    id: "team-rajawali",
-    name: "Rajawali",
-    category: "Putra",
-    schoolId: "school-mi",
-  },
-  { id: "team-garuda", name: "Garuda", category: "Putra", schoolId: "school-mi" },
-  { id: "team-melati", name: "Melati", category: "Putri", schoolId: "school-mi" },
-  { id: "team-kenari", name: "Kenari", category: "Putri", schoolId: "school-mts" },
+  { id: "team-elang", name: "Elang", category: "Putra" },
+  { id: "team-rajawali", name: "Rajawali", category: "Putra" },
+  { id: "team-garuda", name: "Garuda", category: "Putra" },
+  { id: "team-melati", name: "Melati", category: "Putri" },
+  { id: "team-kenari", name: "Kenari", category: "Putri" },
 ];
+
+const participantSchoolsByTeam: Record<string, string> = {
+  "team-elang": "school-mts",
+  "team-rajawali": "school-mi",
+  "team-garuda": "school-mi",
+  "team-melati": "school-mi",
+  "team-kenari": "school-mts",
+};
 
 const memberNames = [
   "Ahmad Fauzan",
@@ -187,6 +190,7 @@ teamRecords.forEach((team, teamIndex) => {
       id: `participant-${memberIndex + 1}`,
       name: memberNames[memberIndex],
       teamId: team.id,
+      schoolId: participantSchoolsByTeam[team.id],
       isPinru: index === 0,
     });
     memberIndex += 1;
@@ -535,7 +539,7 @@ async function loadSupabaseWorkspace(
       ? supabase.from("team_members").select("*")
       : Promise.resolve({ data: [], error: null }),
     userId
-      ? supabase.from("profiles").select("id, full_name, role")
+      ? supabase.from("profiles").select("id, full_name, role, school_id")
       : Promise.resolve({ data: [], error: null }),
     userId
       ? supabase.from("judge_assignments").select("*")
@@ -600,21 +604,21 @@ async function loadSupabaseWorkspace(
         id: team.id,
         name: team.name,
         category: team.category === "putra" ? "Putra" : "Putri",
-        schoolId: team.school_id,
       })),
-      participants: membershipRows.flatMap((membership) => {
-        const person = profileRows.find((profile) => profile.id === membership.user_id);
-        return person
-          ? [
-              {
-                id: person.id,
-                name: person.full_name,
-                teamId: membership.team_id,
-                isPinru: membership.is_pinru,
-              },
-            ]
-          : [];
-      }),
+      participants: profileRows
+        .filter((person) => person.role === "peserta")
+        .map((person) => {
+          const membership = membershipRows.find(
+            (row) => row.user_id === person.id,
+          );
+          return {
+            id: person.id,
+            name: person.full_name,
+            teamId: membership?.team_id ?? "",
+            schoolId: person.school_id,
+            isPinru: membership?.is_pinru ?? false,
+          };
+        }),
       judges: profileRows
         .filter((person) => person.role === "juri")
         .map((person) => ({ id: person.id, name: person.full_name })),
@@ -832,7 +836,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             .insert({
               name: team.name,
               category: team.category === "Putra" ? "putra" : "putri",
-              school_id: team.schoolId,
             })
             .select("*")
             .single();
@@ -841,7 +844,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             id: saved.id,
             name: saved.name,
             category: saved.category === "putra" ? "Putra" : "Putri",
-            schoolId: saved.school_id,
           };
         }
         setData((current) => ({

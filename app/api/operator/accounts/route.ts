@@ -342,6 +342,9 @@ export async function POST(request: NextRequest) {
     typeof body.loginId !== "string" ||
     typeof body.fullName !== "string" ||
     !isAccountRole(body.role) ||
+    (body.schoolId !== undefined &&
+      body.schoolId !== null &&
+      !isUuid(body.schoolId)) ||
     (body.teamId !== null && body.teamId !== undefined && !isUuid(body.teamId)) ||
     typeof body.isPinru !== "boolean"
   ) {
@@ -359,6 +362,21 @@ export async function POST(request: NextRequest) {
   if (body.role !== "peserta" && body.teamId) {
     return jsonResponse(
       { error: "Hanya akun Peserta yang dapat dipetakan ke regu." },
+      400,
+    );
+  }
+  if (
+    body.role === "peserta" &&
+    (typeof body.schoolId !== "string" || !isUuid(body.schoolId))
+  ) {
+    return jsonResponse(
+      { error: "Pangkalan wajib dipilih untuk akun Peserta." },
+      400,
+    );
+  }
+  if (body.role !== "peserta" && body.schoolId) {
+    return jsonResponse(
+      { error: "Pangkalan hanya dapat ditetapkan pada akun Peserta." },
       400,
     );
   }
@@ -416,6 +434,7 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         login_id: loginId,
         role: body.role,
+        school_id: body.role === "peserta" ? body.schoolId : null,
         is_active: true,
       },
       "return=representation",

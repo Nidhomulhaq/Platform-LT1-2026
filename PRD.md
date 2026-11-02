@@ -175,7 +175,6 @@ CREATE TABLE public.teams (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     team_name VARCHAR(100) NOT NULL,
     category team_category NOT NULL,
-    school_id UUID NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -312,7 +311,7 @@ CREATE POLICY "Users Can Update Own Profile" ON public.profiles FOR UPDATE USING
 
 * **Manajemen Pangkalan/Sekolah (`/operator/schools`)**: Pengaturan data MI Ma'arif NU Islamiyah & MTs Ma'arif 28 Islamiyah beserta nama Kepala Madrasah dan Pembina untuk tanda tangan sertifikat.
 
-* **Manajemen Regu**: Fitur *Multi-Select Checkbox* untuk mengelompokkan akun individu ke dalam regu dan pangkalan, serta menetapkan Pinru untuk setiap regu.
+* **Manajemen Regu & Peserta**: Menambahkan regu tanpa pangkalan, membuat akun peserta dengan pangkalan pada profil peserta, memetakan peserta ke regu, dan menetapkan Pinru untuk setiap regu.
 
 * **Manajemen Penugasan**: Menetapkan Panitia pada pos/mata lomba dan Juri pada mata lomba. Perubahan penugasan segera membatasi data yang terlihat dan aksi yang dapat dilakukan.
 

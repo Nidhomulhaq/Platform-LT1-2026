@@ -36,7 +36,11 @@ dan jalankan hasilnya memakai `npm run start`.
    [`supabase/migrations/20261102014824_enforce_role_permissions.sql`](./supabase/migrations/20261102014824_enforce_role_permissions.sql)
    setelah dua migration sebelumnya. Migration ini menambahkan penugasan Panitia,
    status akun aktif, penetapan Pinru, dan pembatasan akses berbasis role melalui RLS.
-5. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
+5. Jalankan migration
+   [`supabase/migrations/20261102050000_participant_school_assignment.sql`](./supabase/migrations/20261102050000_participant_school_assignment.sql)
+   untuk memindahkan relasi pangkalan dari regu ke profil peserta. Migration ini
+   mempertahankan pangkalan peserta yang sudah ada dan mengubah verifikasi sertifikat.
+6. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
    dan kata sandi; alamat email internal Supabase tidak perlu diketahui pengguna.
    Operator dapat membuat akun, mengubah role/regu, menonaktifkan akun, dan
    memulai reset kata sandi dari `/operator/accounts`. Untuk mengaktifkan fitur
@@ -49,10 +53,10 @@ dan jalankan hasilnya memakai `npm run start`.
 
    Key juga dapat diberikan lewat `SUPABASE_SERVICE_ROLE_KEY`. Atur key ini hanya
    pada server atau environment Production/Preview tepercaya di Vercel; jangan
-   kirimkan ke browser atau commit ke Git. Jika Regu Pompom
-   belum ada dan database memiliki beberapa pangkalan, isi `POMPOM_SCHOOL_ID`
-   dengan ID pangkalan Adellia. Jika belum ada pangkalan, skrip tetap membuat
-   akun tetapi menunda pembuatan regu sampai pangkalan yang benar tersedia.
+   kirimkan ke browser atau commit ke Git. Pangkalan Adellia disimpan pada profil
+   peserta, bukan regu. Jika database memiliki beberapa pangkalan dan profil
+   Adellia belum memiliki pangkalan, isi `POMPOM_SCHOOL_ID` dengan ID pangkalan
+   Adellia sebelum menjalankan skrip. Buat pangkalan terlebih dahulu jika belum ada.
    Jalankan:
 
    ```bash
@@ -67,8 +71,8 @@ dan jalankan hasilnya memakai `npm run start`.
    dimulai Operator melalui manajemen akun. Setelah membuat pangkalan Adellia di
    `/operator/schools`, isi `POMPOM_SCHOOL_ID` di `.env.local` dengan UUID
    pangkalan tersebut lalu jalankan skrip kembali untuk membuat/memetakan Regu
-   Pompom.
-6. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
+   Pompom dan menyimpan pangkalan pada profil Adellia.
+7. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
 

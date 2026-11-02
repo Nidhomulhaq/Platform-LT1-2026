@@ -107,7 +107,6 @@ export type Database = {
         id: string;
         name: string;
         category: Database["public"]["Enums"]["team_category"];
-        school_id: string;
         created_at: string;
         updated_at: string;
       }>;

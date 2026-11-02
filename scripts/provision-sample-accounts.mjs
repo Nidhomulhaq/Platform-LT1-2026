@@ -86,32 +86,30 @@ function csvCell(value) {
 
 async function findPompomTeam() {
   const params = new URLSearchParams({
-    select: "id,name,category,school_id",
+    select: "id,name,category",
     name: "eq.Pompom",
+    category: "eq.putri",
   });
   const teams = await request("rest", "GET", `/rest/v1/teams?${params}`);
+  if (teams.length > 1) {
+    throw new Error(
+      "Ada beberapa Regu Pompom putri. Pastikan hanya ada satu regu dengan nama tersebut.",
+    );
+  }
   const requestedSchoolId = process.env.POMPOM_SCHOOL_ID?.trim();
-  const scopedTeams = requestedSchoolId
-    ? teams.filter((team) => team.school_id === requestedSchoolId)
-    : teams;
-  const girlsTeams = scopedTeams.filter((team) => team.category === "putri");
-  if (girlsTeams.length > 1) {
-    throw new Error(
-      "Ada beberapa Regu Pompom putri. Isi POMPOM_SCHOOL_ID dengan ID pangkalan Adellia.",
+  let schoolId = requestedSchoolId || "";
+  if (!schoolId) {
+    const profileParams = new URLSearchParams({
+      select: "school_id",
+      login_id: "eq.adellia.putri",
+    });
+    const profiles = await request(
+      "rest",
+      "GET",
+      `/rest/v1/profiles?${profileParams}`,
     );
+    schoolId = profiles[0]?.school_id || "";
   }
-  const girlsTeam = girlsTeams[0];
-  if (girlsTeam) return { team: girlsTeam, schoolId: girlsTeam.school_id };
-
-  const existingSchoolIds = [...new Set(scopedTeams.map((team) => team.school_id))];
-  if (!requestedSchoolId && existingSchoolIds.length > 1) {
-    throw new Error(
-      "Ada beberapa Regu Pompom di pangkalan berbeda. Isi POMPOM_SCHOOL_ID dengan ID pangkalan Adellia.",
-    );
-  }
-  const schoolIdFromExistingTeam = existingSchoolIds[0];
-  let schoolId =
-    requestedSchoolId || schoolIdFromExistingTeam || "";
   if (!schoolId) {
     const schools = await request(
       "rest",
@@ -122,12 +120,18 @@ async function findPompomTeam() {
     else if (schools.length > 1) {
       const options = schools.map((school) => `${school.name} (${school.id})`);
       throw new Error(
-        `Regu Pompom belum ada dan ada beberapa pangkalan. Isi POMPOM_SCHOOL_ID dengan ID pangkalan Adellia: ${options.join("; ")}`,
+        `Pilih pangkalan Adellia dengan POMPOM_SCHOOL_ID: ${options.join("; ")}`,
       );
     }
   }
 
-  return { team: null, schoolId };
+  if (!schoolId) {
+    throw new Error(
+      "Tambahkan pangkalan terlebih dahulu atau isi POMPOM_SCHOOL_ID.",
+    );
+  }
+
+  return { team: teams[0] ?? null, schoolId };
 }
 
 async function main() {
@@ -160,11 +164,10 @@ async function main() {
   }
 
   let team = existingTeam;
-  if (!team && schoolId) {
+  if (!team) {
     const createdTeams = await request("rest", "POST", "/rest/v1/teams", {
       name: "Pompom",
       category: "putri",
-      school_id: schoolId,
     });
     team = createdTeams[0];
     if (!team?.id) throw new Error("Regu Pompom gagal dibuat di Supabase.");
@@ -219,6 +222,7 @@ async function main() {
         full_name: account.fullName,
         login_id: account.loginId,
         role: account.role,
+        ...(account.role === "peserta" ? { school_id: schoolId } : {}),
       },
     );
     if (!updatedProfiles?.length) {
@@ -240,7 +244,7 @@ async function main() {
   }
 
   const verificationParams = new URLSearchParams({
-    select: "id,full_name,login_id,role",
+    select: "id,full_name,login_id,role,school_id",
     login_id: `in.(${loginIds.join(",")})`,
   });
   const verifiedProfiles = await request(
@@ -258,7 +262,8 @@ async function main() {
         profile?.id !==
           usersByEmail.get(`${account.loginId}@${authEmailDomain}`)?.id ||
         profile?.full_name !== account.fullName ||
-        profile?.role !== account.role
+        profile?.role !== account.role ||
+        (account.role === "peserta" && profile?.school_id !== schoolId)
       );
     })
   ) {
@@ -288,13 +293,7 @@ async function main() {
     console.log(`Kredensial sementara tersimpan lokal di: ${credentialsPath}`);
     console.log("Bagikan secara privat, lalu minta pengguna mengganti kata sandi.");
   }
-  if (team) {
-    console.log(`Regu Pompom (putri): ${team.id}`);
-  } else {
-    console.log(
-      "Regu Pompom belum dibuat: database belum memiliki pangkalan. Isi POMPOM_SCHOOL_ID setelah pangkalan yang benar tersedia, lalu jalankan ulang skrip untuk menyelesaikan pemetaan.",
-    );
-  }
+  console.log(`Regu Pompom (putri): ${team.id}`);
 }
 
 main().catch((error) => {

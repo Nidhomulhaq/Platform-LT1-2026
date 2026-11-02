@@ -566,7 +566,6 @@ function parsePublicCertificate(value: Json): PublicCertificate | null {
       id: team.id,
       name: team.name,
       category: team.category === "putra" ? "Putra" : "Putri",
-      schoolId: school.id,
     },
     school: {
       id: school.id,
@@ -639,7 +638,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
   );
   const currentTeamId = participant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
   const team = getTeam(data, currentTeamId);
-  const school = data.schools.find((item) => item.id === team?.schoolId);
+  const school = data.schools.find((item) => item.id === participant?.schoolId);
   const teamScores = approvedScoresForTeam(data.scores, currentTeamId);
   const badgeCount = teamScores.filter(
     (score) => score.score !== null && score.score >= 80,
@@ -958,11 +957,9 @@ function ParticipantLeaderboard() {
   const currentTeamId = participant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
   const rankedTeams = data.teams
     .map((team) => {
-      const school = data.schools.find((item) => item.id === team.schoolId);
       const scores = approvedScoresForTeam(data.scores, team.id);
       return {
         ...team,
-        schoolName: school?.name ?? "Pangkalan belum dipetakan",
         approvedCount: scores.length,
         total: scores.reduce((sum, score) => sum + (score.score ?? 0), 0),
       };
@@ -1009,7 +1006,7 @@ function ParticipantLeaderboard() {
                     {team.id === currentTeamId ? " · Regumu" : ""}
                   </strong>
                   <span>
-                    {team.schoolName} · {team.category} · {team.approvedCount}/
+                    {team.category} · {team.approvedCount}/
                     {data.competitions.length} nilai
                   </span>
                 </span>
@@ -1035,7 +1032,6 @@ function ParticipantScoreRecap() {
   const [selectedTeamId, setSelectedTeamId] = React.useState(ownTeamId);
   const canViewAllTeams = data.leaderboardPublished;
   const team = data.teams.find((item) => item.id === selectedTeamId);
-  const school = data.schools.find((item) => item.id === team?.schoolId);
   const scores = data.competitions.map((competition) => ({
     competition,
     score: team ? getScore(data.scores, team.id, competition.id) : undefined,
@@ -1088,8 +1084,7 @@ function ParticipantScoreRecap() {
           <div>
             <h2>{team?.name ?? "Regu belum dipetakan"}</h2>
             <p>
-              {school?.name ?? "Pangkalan belum dipetakan"}
-              {team ? ` · ${team.category}` : ""}
+              {team ? team.category : "Belum dipetakan"}
             </p>
           </div>
           <label>
@@ -1155,7 +1150,7 @@ function ParticipantProfile({ notify }: { notify: Notify }) {
     : isConnected
       ? undefined
       : getTeam(data, CURRENT_TEAM_ID);
-  const school = data.schools.find((item) => item.id === team?.schoolId);
+  const school = data.schools.find((item) => item.id === participant?.schoolId);
   const initials = (participant?.name ?? "Peserta")
     .split(/\s+/)
     .slice(0, 2)
@@ -1176,7 +1171,13 @@ function ParticipantProfile({ notify }: { notify: Notify }) {
           </span>
           <div>
             <h2>{participant?.name ?? "Peserta belum dipetakan"}</h2>
-            <p>{participant?.isPinru ? "Pemimpin regu" : "Anggota regu"}</p>
+            <p>
+              {participant?.isPinru
+                ? "Pemimpin regu"
+                : team
+                  ? "Anggota regu"
+                  : "Belum dipetakan ke regu"}
+            </p>
           </div>
         </div>
         <dl className="participant-profile-details">
@@ -1615,7 +1616,7 @@ function OperatorDashboard() {
   const reviewQueue = pending.slice(0, 4);
   const schoolTotals = data.schools.map((school) => ({
     ...school,
-    count: data.teams.filter((team) => team.schoolId === school.id).length,
+    count: data.participants.filter((person) => person.schoolId === school.id).length,
   }));
   const stats = [
     { label: "Peserta terdaftar", value: data.participants.length, detail: "di 5 regu" },
@@ -1674,15 +1675,12 @@ function OperatorDashboard() {
                 <tbody>
                   {reviewQueue.map((score) => {
                     const team = getTeam(data, score.teamId);
-                    const school = data.schools.find(
-                      (item) => item.id === team?.schoolId,
-                    );
                     const competition = getCompetition(data, score.competitionId);
                     return (
                       <tr key={score.id}>
                         <td>
                           <span className="table-primary">{team?.name ?? "Regu"}</span>
-                          <span className="table-secondary">{school?.schoolType}</span>
+                          <span className="table-secondary">{team?.category}</span>
                         </td>
                         <td>{competition?.title ?? "Mata lomba"}</td>
                         <td className="numeric">{score.score ?? "—"}</td>
@@ -1799,6 +1797,7 @@ function AccountManagement({ notify }: { notify: Notify }) {
   const [fullName, setFullName] = React.useState("");
   const [role, setRole] = React.useState<Role>("peserta");
   const [teamId, setTeamId] = React.useState("");
+  const [schoolId, setSchoolId] = React.useState(data.schools[0]?.id ?? "");
   const [isPinru, setIsPinru] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [busyAccountId, setBusyAccountId] = React.useState("");
@@ -1858,6 +1857,10 @@ function AccountManagement({ notify }: { notify: Notify }) {
     if (isConnected) void refreshAccounts();
   }, [isConnected, refreshAccounts]);
 
+  React.useEffect(() => {
+    if (!schoolId && data.schools.length) setSchoolId(data.schools[0].id);
+  }, [data.schools, schoolId]);
+
   const createAccount = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setTemporaryPassword("");
@@ -1869,6 +1872,7 @@ function AccountManagement({ notify }: { notify: Notify }) {
         fullName,
         role,
         teamId: role === "peserta" ? teamId || null : null,
+        schoolId: role === "peserta" ? schoolId || null : null,
         isPinru: false,
       });
       const createdAccount = payload.account;
@@ -1880,6 +1884,7 @@ function AccountManagement({ notify }: { notify: Notify }) {
       setFullName("");
       setRole("peserta");
       setTeamId("");
+      setSchoolId(data.schools[0]?.id ?? "");
       setIsPinru(false);
 
       let account = createdAccount;
@@ -2101,6 +2106,22 @@ function AccountManagement({ notify }: { notify: Notify }) {
                       ))}
                     </select>
                   </label>
+                  <label>
+                    <span className="field-label">Pangkalan peserta</span>
+                    <select
+                      className="field"
+                      value={schoolId}
+                      onChange={(event) => setSchoolId(event.target.value)}
+                      required
+                    >
+                      <option value="">Pilih pangkalan</option>
+                      {data.schools.map((school) => (
+                        <option value={school.id} key={school.id}>
+                          {school.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="check-label">
                     <input
                       type="checkbox"
@@ -2115,7 +2136,12 @@ function AccountManagement({ notify }: { notify: Notify }) {
               <button
                 className="button button-small"
                 type="submit"
-                disabled={loading || !fullName.trim() || !loginId.trim()}
+                disabled={
+                  loading ||
+                  !fullName.trim() ||
+                  !loginId.trim() ||
+                  (role === "peserta" && !schoolId)
+                }
               >
                 Buat akun
               </button>
@@ -2409,16 +2435,13 @@ function OperatorScores({ notify }: { notify: Notify }) {
               <tbody>
                 {visibleScores.map((score) => {
                   const team = getTeam(data, score.teamId);
-                  const school = data.schools.find(
-                    (item) => item.id === team?.schoolId,
-                  );
                   const competition = getCompetition(data, score.competitionId);
                   return (
                     <tr key={score.id}>
                       <td>
                         <span className="table-primary">{team?.name}</span>
                         <span className="table-secondary">
-                          {school?.schoolType} · {team?.category}
+                          {team?.category}
                         </span>
                       </td>
                       <td>{competition?.title}</td>
@@ -2637,8 +2660,8 @@ function SchoolManagement({ notify }: { notify: Notify }) {
       {data.schools.length ? (
       <div className="school-stack" style={{ marginTop: 16 }}>
         {data.schools.map((school) => {
-          const teamCount = data.teams.filter(
-            (team) => team.schoolId === school.id,
+          const participantCount = data.participants.filter(
+            (person) => person.schoolId === school.id,
           ).length;
           return (
             <section className="school-card" key={school.id}>
@@ -2648,7 +2671,7 @@ function SchoolManagement({ notify }: { notify: Notify }) {
                   <div>
                     <h2>{school.name}</h2>
                     <p>
-                      {school.schoolType} · {teamCount} regu terdaftar
+                      {school.schoolType} · {participantCount} peserta terdaftar
                     </p>
                   </div>
                 </div>
@@ -2892,9 +2915,6 @@ function JuryScoring({ notify }: { notify: Notify }) {
             </thead>
             <tbody>
               {data.teams.map((team) => {
-                const school = data.schools.find(
-                  (item) => item.id === team.schoolId,
-                );
                 const saved = getScore(data.scores, team.id, competitionId);
                 const draft = draftFor(team.id);
                 const disabled = saved?.status === "approved";
@@ -2902,9 +2922,7 @@ function JuryScoring({ notify }: { notify: Notify }) {
                   <tr key={team.id}>
                     <td>
                       <span className="table-primary">{team.name}</span>
-                      <span className="table-secondary">
-                        {school?.schoolType} · {team.category}
-                      </span>
+                      <span className="table-secondary">{team.category}</span>
                     </td>
                     <td>
                       <label className="sr-only" htmlFor={`score-${team.id}`}>
@@ -3600,20 +3618,46 @@ function PublicationSettings({ notify }: { notify: Notify }) {
 }
 
 function TeamManagement({ notify }: { notify: Notify }) {
-  const { data, assignParticipants, createTeam, setTeamPinru } = useWorkspace();
+  const {
+    data,
+    assignParticipants,
+    createTeam,
+    isConnected,
+    refreshWorkspace,
+    setTeamPinru,
+  } = useWorkspace();
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [targetTeam, setTargetTeam] = React.useState(data.teams[0]?.id ?? "");
+  const [addMode, setAddMode] = React.useState<"team" | "participant">("team");
   const [newTeamName, setNewTeamName] = React.useState("");
   const [newTeamCategory, setNewTeamCategory] =
     React.useState<Team["category"]>("Putra");
-  const [newTeamSchool, setNewTeamSchool] = React.useState(
+  const [creating, setCreating] = React.useState(false);
+  const [newParticipantName, setNewParticipantName] = React.useState("");
+  const [newParticipantLoginId, setNewParticipantLoginId] = React.useState("");
+  const [newParticipantSchool, setNewParticipantSchool] = React.useState(
     data.schools[0]?.id ?? "",
   );
-  const [creating, setCreating] = React.useState(false);
+  const [creatingParticipant, setCreatingParticipant] = React.useState(false);
+  const [temporaryPassword, setTemporaryPassword] = React.useState("");
   const [search, setSearch] = React.useState("");
+  React.useEffect(() => {
+    if (!data.teams.some((team) => team.id === targetTeam)) {
+      setTargetTeam(data.teams[0]?.id ?? "");
+    }
+  }, [data.teams, targetTeam]);
+  React.useEffect(() => {
+    if (
+      !data.schools.some((school) => school.id === newParticipantSchool) &&
+      data.schools.length
+    ) {
+      setNewParticipantSchool(data.schools[0].id);
+    }
+  }, [data.schools, newParticipantSchool]);
   const visibleParticipants = data.participants.filter((participant) => {
     const team = getTeam(data, participant.teamId);
-    return `${participant.name} ${team?.name ?? ""}`
+    const school = data.schools.find((item) => item.id === participant.schoolId);
+    return `${participant.name} ${team?.name ?? ""} ${school?.name ?? ""}`
       .toLowerCase()
       .includes(search.toLowerCase());
   });
@@ -3645,6 +3689,10 @@ function TeamManagement({ notify }: { notify: Notify }) {
       notify("Pilih minimal satu peserta untuk dipetakan.", true);
       return;
     }
+    if (!targetTeam) {
+      notify("Tambahkan regu terlebih dahulu sebelum memetakan peserta.", true);
+      return;
+    }
     try {
       await assignParticipants(selectedIds, targetTeam);
       notify(`${selectedIds.length} peserta dipetakan ke Regu ${getTeam(data, targetTeam)?.name}.`);
@@ -3655,11 +3703,64 @@ function TeamManagement({ notify }: { notify: Notify }) {
     }
   };
 
+  const createParticipant = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setTemporaryPassword("");
+    setCreatingParticipant(true);
+    try {
+      const response = await fetch("/api/operator/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          loginId: newParticipantLoginId,
+          fullName: newParticipantName,
+          role: "peserta",
+          teamId: null,
+          schoolId: newParticipantSchool,
+          isPinru: false,
+        }),
+      });
+      const payload: unknown = await response.json();
+      if (!isJsonRecord(payload)) {
+        throw new Error("Respons pembuatan akun peserta tidak valid.");
+      }
+      if (!response.ok) {
+        throw new Error(
+          typeof payload.error === "string"
+            ? payload.error
+            : "Akun peserta gagal dibuat.",
+        );
+      }
+      if (
+        !isManagedAccount(payload.account) ||
+        typeof payload.temporaryPassword !== "string"
+      ) {
+        throw new Error("Server tidak mengembalikan informasi akun yang valid.");
+      }
+      setTemporaryPassword(payload.temporaryPassword);
+      setNewParticipantName("");
+      setNewParticipantLoginId("");
+      await refreshWorkspace();
+      notify("Peserta berhasil ditambahkan. Bagikan kata sandi secara privat.");
+    } catch (error) {
+      console.error("Gagal menambahkan peserta.", error);
+      notify(
+        error instanceof Error ? error.message : "Peserta gagal ditambahkan.",
+        true,
+      );
+    } finally {
+      setCreatingParticipant(false);
+    }
+  };
+
   return (
     <>
       <PageHeading
         title="Regu & peserta"
-        description="Petakan anggota terdaftar ke regu dan pangkalan yang sesuai."
+        description="Kelola regu dan peserta. Pangkalan dicatat pada profil peserta."
         actions={
           <>
             <label className="sr-only" htmlFor="target-team">
@@ -3680,7 +3781,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
             </select>
             <button
               className="button button-small"
-              disabled={!selectedIds.length}
+              disabled={!selectedIds.length || !data.teams.length}
               onClick={() => void assign()}
             >
               Petakan {selectedIds.length || ""}
@@ -3690,10 +3791,34 @@ function TeamManagement({ notify }: { notify: Notify }) {
       />
       <section className="panel panel-pad" style={{ marginBottom: 18 }}>
         <SectionHeading
-          title="Tambah regu"
-          detail="Pilih pangkalan dan kategori untuk regu baru."
+          title={addMode === "team" ? "Tambah regu" : "Tambah peserta"}
+          detail={
+            addMode === "team"
+              ? "Buat regu berdasarkan nama dan kategori."
+              : "Buat akun peserta dan pilih pangkalannya."
+          }
+          action={
+            <div role="group" aria-label="Pilih jenis data">
+              <button
+                className={`button button-small${addMode === "team" ? "" : " button-secondary"}`}
+                type="button"
+                aria-pressed={addMode === "team"}
+                onClick={() => setAddMode("team")}
+              >
+                Tambah regu
+              </button>{" "}
+              <button
+                className={`button button-small${addMode === "participant" ? "" : " button-secondary"}`}
+                type="button"
+                aria-pressed={addMode === "participant"}
+                onClick={() => setAddMode("participant")}
+              >
+                Tambah peserta
+              </button>
+            </div>
+          }
         />
-        {data.schools.length ? (
+        {addMode === "team" ? (
           <form
             className="form-row"
             onSubmit={(event) => {
@@ -3702,7 +3827,6 @@ function TeamManagement({ notify }: { notify: Notify }) {
               void createTeam({
                 name: newTeamName.trim(),
                 category: newTeamCategory,
-                schoolId: newTeamSchool,
               })
                 .then(() => {
                   setNewTeamName("");
@@ -3737,24 +3861,83 @@ function TeamManagement({ notify }: { notify: Notify }) {
                 <option value="Putri">Putri</option>
               </select>
             </label>
-            <label>
-              <span className="field-label">Pangkalan</span>
-              <select
-                className="field"
-                value={newTeamSchool}
-                onChange={(event) => setNewTeamSchool(event.target.value)}
-              >
-                {data.schools.map((school) => (
-                  <option value={school.id} key={school.id}>
-                    {school.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button className="button button-small" type="submit" disabled={creating}>
               {creating ? "Menyimpan…" : "Tambah regu"}
             </button>
           </form>
+        ) : data.schools.length ? (
+          <>
+            <form className="form-row" onSubmit={createParticipant}>
+              <label>
+                <span className="field-label">Nama lengkap</span>
+                <input
+                  className="field"
+                  value={newParticipantName}
+                  onChange={(event) => setNewParticipantName(event.target.value)}
+                  minLength={1}
+                  maxLength={150}
+                  required
+                />
+              </label>
+              <label>
+                <span className="field-label">ID pengguna</span>
+                <input
+                  className="field"
+                  value={newParticipantLoginId}
+                  onChange={(event) =>
+                    setNewParticipantLoginId(event.target.value)
+                  }
+                  pattern="[a-z0-9]+([.-][a-z0-9]+)*"
+                  title="Gunakan huruf kecil, angka, titik, atau tanda hubung."
+                  required
+                />
+              </label>
+              <label>
+                <span className="field-label">Pangkalan peserta</span>
+                <select
+                  className="field"
+                  value={newParticipantSchool}
+                  onChange={(event) =>
+                    setNewParticipantSchool(event.target.value)
+                  }
+                  required
+                >
+                  {data.schools.map((school) => (
+                    <option value={school.id} key={school.id}>
+                      {school.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="button button-small"
+                type="submit"
+                disabled={
+                  !isConnected ||
+                  creatingParticipant ||
+                  !newParticipantSchool ||
+                  !newParticipantName.trim() ||
+                  !newParticipantLoginId.trim()
+                }
+              >
+                {creatingParticipant ? "Menyimpan…" : "Tambah peserta"}
+              </button>
+            </form>
+            {!isConnected ? (
+              <p className="inline-note" role="note" style={{ marginTop: 12 }}>
+                Hubungkan Supabase untuk membuat akun peserta.
+              </p>
+            ) : null}
+            {temporaryPassword ? (
+              <div className="notice" role="status" style={{ marginTop: 14 }}>
+                <LockKeyhole aria-hidden="true" />
+                <p>
+                  Kata sandi sementara (bagikan secara privat):{" "}
+                  <code>{temporaryPassword}</code>
+                </p>
+              </div>
+            ) : null}
+          </>
         ) : (
           <p className="inline-note">
             Tambahkan pangkalan terlebih dahulu pada menu Pangkalan.
@@ -3765,7 +3948,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
         <div className="search-control">
           <Search aria-hidden="true" />
           <label className="sr-only" htmlFor="participant-search">
-            Cari nama peserta atau regu
+            Cari peserta, regu, atau pangkalan
           </label>
           <input
             id="participant-search"
@@ -3802,7 +3985,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
               {visibleParticipants.map((person) => {
                 const team = getTeam(data, person.teamId);
                 const school = data.schools.find(
-                  (item) => item.id === team?.schoolId,
+                  (item) => item.id === person.schoolId,
                 );
                 return (
                   <tr key={person.id}>
@@ -3820,10 +4003,10 @@ function TeamManagement({ notify }: { notify: Notify }) {
                       <span className="table-secondary">{person.id}</span>
                     </td>
                     <td>{team?.name ?? "Belum dipetakan"}</td>
-                    <td>{school?.schoolType ?? "—"}</td>
+                    <td>{school?.name ?? "Belum dipetakan"}</td>
                     <td>
                       <span className="role-chip">
-                        {person.isPinru ? "Pinru" : "Anggota"}
+                        {person.isPinru ? "Pinru" : team ? "Anggota" : "—"}
                       </span>
                     </td>
                     <td>
@@ -3983,16 +4166,13 @@ function EventCoordination({ notify }: { notify: Notify }) {
                 const present = Boolean(
                   data.attendance[`${team.id}:${competitionId}`],
                 );
-                const school = data.schools.find(
-                  (item) => item.id === team.schoolId,
-                );
                 const score = getScore(data.scores, team.id, competitionId);
                 return (
                   <div className="activity-row" key={team.id}>
                     <span className="activity-copy">
                       <strong>Regu {team.name}</strong>
                       <span>
-                        {school?.schoolType} · {team.category} ·{" "}
+                        {team.category} ·{" "}
                         {getSubmission(data, team.id, competitionId)?.submitted
                           ? score
                             ? "Tugas sudah dinilai"
@@ -4359,7 +4539,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
           : getTeam(data, CURRENT_TEAM_ID);
       const school = isConnected
         ? certificate?.school
-        : data.schools.find((item) => item.id === team?.schoolId);
+        : data.schools.find(
+            (item) => item.id === demoParticipant?.schoolId,
+          );
       const teamScores = certificate
         ? certificate.scores.map((score) => ({
             id: score.id,
