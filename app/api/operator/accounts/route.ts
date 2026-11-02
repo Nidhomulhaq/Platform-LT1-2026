@@ -13,6 +13,7 @@ type AccountRow = {
   full_name: string;
   login_id: string | null;
   role: AccountRole;
+  school_id: string | null;
   is_active: boolean;
 };
 type MembershipRow = {
@@ -168,6 +169,7 @@ function accountResponse(
     loginId: profile.login_id ?? "",
     fullName: profile.full_name,
     role: profile.role,
+    schoolId: profile.school_id,
     teamId: membership?.team_id ?? null,
     isPinru: membership?.is_pinru ?? false,
     isActive: profile.is_active,
@@ -176,7 +178,7 @@ function accountResponse(
 
 async function getAccounts(projectUrl: string) {
   const profilesQuery = new URLSearchParams({
-    select: "id,full_name,login_id,role,is_active",
+    select: "id,full_name,login_id,role,school_id,is_active",
     order: "full_name.asc",
   });
   const membershipsQuery = new URLSearchParams({
@@ -214,6 +216,7 @@ async function getAccounts(projectUrl: string) {
       typeof row.id !== "string" ||
       typeof row.full_name !== "string" ||
       (row.login_id !== null && typeof row.login_id !== "string") ||
+      (row.school_id !== null && typeof row.school_id !== "string") ||
       (row.role !== "operator" &&
         row.role !== "panitia" &&
         row.role !== "juri" &&
@@ -227,6 +230,7 @@ async function getAccounts(projectUrl: string) {
       full_name: row.full_name,
       login_id: row.login_id,
       role: row.role,
+      school_id: row.school_id,
       is_active: row.is_active,
     };
     return [accountResponse(profile, membershipsByUser.get(profile.id))];
@@ -458,7 +462,10 @@ export async function POST(request: NextRequest) {
     }
 
     const profile = profileResult[0];
-    if (!isRecord(profile)) {
+    if (
+      !isRecord(profile) ||
+      (typeof profile.school_id !== "string" && profile.school_id !== null)
+    ) {
       throw new Error("Data profil akun tidak valid.");
     }
     const account: AccountRow = {
@@ -466,6 +473,7 @@ export async function POST(request: NextRequest) {
       full_name: fullName,
       login_id: loginId,
       role: body.role,
+      school_id: profile.school_id,
       is_active: true,
     };
     return jsonResponse(
@@ -599,7 +607,10 @@ export async function PATCH(request: NextRequest) {
         auth.projectUrl,
         `/rest/v1/profiles?${updateQuery}`,
         "PATCH",
-        { role: body.role },
+        {
+          role: body.role,
+          ...(body.role === "peserta" ? {} : { school_id: null }),
+        },
         "return=representation",
       );
       if (body.role !== "peserta") {
@@ -698,6 +709,65 @@ export async function PATCH(request: NextRequest) {
       {
         error:
           error instanceof Error ? error.message : "Akun gagal diperbarui.",
+      },
+      error instanceof SupabaseAdminError ? error.status : 500,
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!ensureSameOrigin(request)) {
+    return jsonResponse({ error: "Permintaan lintas situs ditolak." }, 403);
+  }
+  const auth = await getOperator();
+  if ("error" in auth) return auth.error;
+  const body = await parseBody(request);
+  if (!body || !isUuid(body.userId)) {
+    return jsonResponse({ error: "Akun yang akan dihapus tidak valid." }, 400);
+  }
+  if (body.userId === auth.userId) {
+    return jsonResponse(
+      { error: "Operator tidak dapat menghapus akunnya sendiri." },
+      409,
+    );
+  }
+
+  try {
+    const profileQuery = new URLSearchParams({
+      id: `eq.${body.userId}`,
+      select: "id,role,is_active",
+    });
+    const profiles = await adminRequest(
+      auth.projectUrl,
+      `/rest/v1/profiles?${profileQuery}`,
+      "GET",
+    );
+    if (!Array.isArray(profiles) || !isRecord(profiles[0])) {
+      return jsonResponse({ error: "Akun tidak ditemukan." }, 404);
+    }
+
+    if (
+      profiles[0].role === "operator" &&
+      profiles[0].is_active === true
+    ) {
+      await ensureActiveOperatorRemains(auth.projectUrl, body.userId);
+    }
+
+    await adminRequest(
+      auth.projectUrl,
+      `/auth/v1/admin/users/${encodeURIComponent(body.userId)}`,
+      "DELETE",
+    );
+    return jsonResponse({ deleted: true });
+  } catch (error) {
+    console.error(
+      "Gagal menghapus akun operator.",
+      error instanceof Error ? error.message : "Kesalahan tidak diketahui.",
+    );
+    return jsonResponse(
+      {
+        error:
+          error instanceof Error ? error.message : "Akun gagal dihapus.",
       },
       error instanceof SupabaseAdminError ? error.status : 500,
     );

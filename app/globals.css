@@ -1581,8 +1581,25 @@ textarea:focus-visible {
 
 .table-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.account-list-actions,
+.account-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.account-list-actions {
+  justify-content: flex-end;
+}
+
+.account-row-actions {
+  flex: 0 1 860px;
+  justify-content: flex-end;
 }
 
 .filter-select,
@@ -2828,6 +2845,20 @@ textarea:focus-visible {
 
   .section-heading {
     align-items: flex-start;
+  }
+
+  .account-list-item {
+    flex-wrap: wrap;
+    padding-block: 12px;
+  }
+
+  .account-list-item .activity-copy,
+  .account-list-item .account-row-actions {
+    flex: 1 1 100%;
+  }
+
+  .account-list-actions {
+    justify-content: flex-start;
   }
 
   .participant-tab-bar {

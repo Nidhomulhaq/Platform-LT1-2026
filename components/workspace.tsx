@@ -1757,10 +1757,80 @@ type ManagedAccount = {
   loginId: string;
   fullName: string;
   role: Role;
+  schoolId: string | null;
   teamId: string | null;
   isPinru: boolean;
   isActive: boolean;
 };
+
+const accountRoleLabels: Record<Role, string> = {
+  operator: "Operator",
+  panitia: "Panitia",
+  juri: "Juri",
+  peserta: "Peserta",
+};
+
+function escapeXml(value: string) {
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/[<>&'"]/g, (character) => {
+      const entities: Record<string, string> = {
+        "<": "&lt;",
+        ">": "&gt;",
+        "&": "&amp;",
+        "'": "&apos;",
+        '"': "&quot;",
+      };
+      return entities[character] ?? character;
+    });
+}
+
+function createAccountsWorkbook(
+  accounts: ManagedAccount[],
+  teams: Team[],
+  schools: School[],
+) {
+  const roles: Role[] = ["peserta", "panitia", "juri", "operator"];
+  const worksheets = roles
+    .map((role) => {
+      const rows = accounts
+        .filter((account) => account.role === role)
+        .sort((left, right) => left.fullName.localeCompare(right.fullName))
+        .map((account) => {
+          const team = teams.find((item) => item.id === account.teamId);
+          const school = schools.find((item) => item.id === account.schoolId);
+          return [
+            account.fullName,
+            account.loginId,
+            accountRoleLabels[account.role],
+            account.isActive ? "Aktif" : "Nonaktif",
+            team?.name ?? "",
+            school?.name ?? "",
+            account.isPinru ? "Ya" : "Tidak",
+          ];
+        });
+      const tableRows = [
+        ["Nama lengkap", "ID pengguna", "Peran", "Status", "Regu", "Pangkalan", "Pinru"],
+        ...rows,
+      ]
+        .map(
+          (row) =>
+            `<Row>${row
+              .map(
+                (cell) =>
+                  `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`,
+              )
+              .join("")}</Row>`,
+        )
+        .join("");
+      return `<Worksheet ss:Name="${accountRoleLabels[role]}"><Table>${tableRows}</Table></Worksheet>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${worksheets}</Workbook>`;
+}
 
 function isManagedAccount(value: unknown): value is ManagedAccount {
   if (!isJsonRecord(value)) return false;
@@ -1772,6 +1842,7 @@ function isManagedAccount(value: unknown): value is ManagedAccount {
       value.role === "panitia" ||
       value.role === "juri" ||
       value.role === "peserta") &&
+    (typeof value.schoolId === "string" || value.schoolId === null) &&
     (typeof value.teamId === "string" || value.teamId === null) &&
     typeof value.isPinru === "boolean" &&
     typeof value.isActive === "boolean"
@@ -1803,6 +1874,13 @@ function AccountManagement({ notify }: { notify: Notify }) {
   const [busyAccountId, setBusyAccountId] = React.useState("");
   const [apiError, setApiError] = React.useState("");
   const [temporaryPassword, setTemporaryPassword] = React.useState("");
+  const [accountRoleFilter, setAccountRoleFilter] = React.useState<Role | "all">(
+    "all",
+  );
+  const visibleAccounts =
+    accountRoleFilter === "all"
+      ? accounts
+      : accounts.filter((account) => account.role === accountRoleFilter);
 
   const request = async (method: string, body?: Record<string, unknown>) => {
     const response = await fetch("/api/operator/accounts", {
@@ -1860,6 +1938,65 @@ function AccountManagement({ notify }: { notify: Notify }) {
   React.useEffect(() => {
     if (!schoolId && data.schools.length) setSchoolId(data.schools[0].id);
   }, [data.schools, schoolId]);
+
+  const downloadAccounts = () => {
+    const workbook = createAccountsWorkbook(accounts, data.teams, data.schools);
+    const file = new Blob([workbook], {
+      type: "application/vnd.ms-excel;charset=utf-8",
+    });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `akun-terdaftar-${new Date().toISOString().slice(0, 10)}.xls`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const deleteAccount = async (account: ManagedAccount) => {
+    if (account.id === currentUserId) {
+      notify("Operator tidak dapat menghapus akunnya sendiri.", true);
+      return;
+    }
+    if (
+      !window.confirm(
+        `Hapus akun ${account.fullName} (@${account.loginId}) secara permanen? Tindakan ini tidak dapat dibatalkan.`,
+      )
+    ) {
+      return;
+    }
+
+    setBusyAccountId(account.id);
+    setTemporaryPassword("");
+    try {
+      await request("DELETE", { userId: account.id });
+      setAccounts((current) =>
+        current.filter((item) => item.id !== account.id),
+      );
+      setSelectedRoles((current) => {
+        const next = { ...current };
+        delete next[account.id];
+        return next;
+      });
+      setSelectedTeams((current) => {
+        const next = { ...current };
+        delete next[account.id];
+        return next;
+      });
+      try {
+        await refreshWorkspace();
+      } catch (error) {
+        console.error("Akun dihapus, tetapi workspace gagal disegarkan.", error);
+        notify("Akun dihapus, tetapi data workspace gagal disegarkan.", true);
+        return;
+      }
+      notify(`Akun ${account.fullName} berhasil dihapus.`);
+    } catch (error) {
+      console.error("Gagal menghapus akun.", error);
+      notify(error instanceof Error ? error.message : "Akun gagal dihapus.", true);
+    } finally {
+      setBusyAccountId("");
+    }
+  };
 
   const createAccount = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2161,16 +2298,50 @@ function AccountManagement({ notify }: { notify: Notify }) {
           <section className="panel panel-pad" style={{ marginTop: 18 }}>
             <SectionHeading
               title="Akun terdaftar"
-              detail={loading ? "Memuat akun…" : `${accounts.length} akun`}
+              detail={
+                loading
+                  ? "Memuat akun…"
+                  : accountRoleFilter === "all"
+                    ? `${accounts.length} akun`
+                    : `${visibleAccounts.length} dari ${accounts.length} akun`
+              }
               action={
-                <button
-                  className="button button-secondary button-small"
-                  type="button"
-                  disabled={loading}
-                  onClick={() => void refreshAccounts()}
-                >
-                  Muat ulang
-                </button>
+                <div className="account-list-actions">
+                  <label className="sr-only" htmlFor="account-role-filter">
+                    Tampilkan akun berdasarkan peran
+                  </label>
+                  <select
+                    id="account-role-filter"
+                    className="filter-select"
+                    value={accountRoleFilter}
+                    onChange={(event) =>
+                      setAccountRoleFilter(event.target.value as Role | "all")
+                    }
+                  >
+                    <option value="all">Semua peran</option>
+                    <option value="peserta">Peserta</option>
+                    <option value="panitia">Panitia</option>
+                    <option value="juri">Juri</option>
+                    <option value="operator">Operator</option>
+                  </select>
+                  <button
+                    className="button button-secondary button-small"
+                    type="button"
+                    disabled={loading || !accounts.length}
+                    onClick={downloadAccounts}
+                  >
+                    <Download aria-hidden="true" />
+                    Unduh XLS
+                  </button>
+                  <button
+                    className="button button-secondary button-small"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void refreshAccounts()}
+                  >
+                    Muat ulang
+                  </button>
+                </div>
               }
             />
             {apiError ? (
@@ -2180,21 +2351,28 @@ function AccountManagement({ notify }: { notify: Notify }) {
               </p>
             ) : loading ? (
               <p className="inline-note">Memuat daftar akun…</p>
-            ) : accounts.length ? (
+            ) : visibleAccounts.length ? (
               <div className="activity-list">
-                {accounts.map((account) => {
+                {visibleAccounts.map((account) => {
                   const team = data.teams.find((item) => item.id === account.teamId);
+                  const school = data.schools.find(
+                    (item) => item.id === account.schoolId,
+                  );
                   return (
-                    <div className="activity-row" key={account.id}>
+                    <div
+                      className="activity-row account-list-item"
+                      key={account.id}
+                    >
                       <span className="activity-copy">
                         <strong>{account.fullName}</strong>
                         <span>
-                          @{account.loginId} · {account.role}
+                          @{account.loginId} · {accountRoleLabels[account.role]}
                           {team ? ` · Regu ${team.name}` : ""}
+                          {school ? ` · ${school.name}` : ""}
                           {account.isPinru ? " · Pinru" : ""}
                         </span>
                       </span>
-                      <div className="table-actions">
+                      <div className="account-row-actions">
                         <label className="sr-only" htmlFor={`account-role-${account.id}`}>
                           Peran untuk {account.fullName}
                         </label>
@@ -2295,6 +2473,17 @@ function AccountManagement({ notify }: { notify: Notify }) {
                         >
                           {account.isActive ? "Nonaktifkan" : "Aktifkan"}
                         </button>
+                        <button
+                          className="button button-danger button-small"
+                          type="button"
+                          disabled={
+                            busyAccountId === account.id ||
+                            account.id === currentUserId
+                          }
+                          onClick={() => void deleteAccount(account)}
+                        >
+                          Hapus
+                        </button>
                       </div>
                     </div>
                   );
@@ -2303,7 +2492,11 @@ function AccountManagement({ notify }: { notify: Notify }) {
             ) : (
               <div className="empty-state">
                 <Users aria-hidden="true" />
-                <strong>Belum ada akun yang dapat ditampilkan</strong>
+                <strong>
+                  {accounts.length
+                    ? "Tidak ada akun dengan peran ini"
+                    : "Belum ada akun yang dapat ditampilkan"}
+                </strong>
               </div>
             )}
           </section>
@@ -2733,7 +2926,7 @@ function SchoolManagement({ notify }: { notify: Notify }) {
         <div className="empty-state">
           <Landmark aria-hidden="true" />
           <strong>Belum ada pangkalan</strong>
-          <p>Tambahkan pangkalan untuk mulai membentuk regu.</p>
+          <p>Tambahkan pangkalan agar dapat dipilih saat membuat akun peserta.</p>
         </div>
       )}
       <div className="form-footer">

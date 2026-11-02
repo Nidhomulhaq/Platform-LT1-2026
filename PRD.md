@@ -18,7 +18,7 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
 
 | Peran | ENUM Role | Deskripsi Hak Akses & Tanggung Jawab | 
 | ----- | ----- | ----- | 
-| **Operator Pusat** | `operator` | Mengelola akun (membuat dan menonaktifkan akun, menetapkan role, memetakan anggota ke regu, dan memulai reset kata sandi melalui alur aman), data pangkalan dan regu, mata lomba, isi instruksi, serta penugasan Panitia dan Juri. Meninjau nilai dengan menyetujui atau meminta revisi, menerbitkan leaderboard, dan mempublikasikan sertifikat. Pengelolaan akun harus menggunakan backend tepercaya; secret key Supabase tidak boleh dikirim ke peramban. |
+| **Operator Pusat** | `operator` | Mengelola akun (membuat, menghapus, menonaktifkan, menetapkan role, memetakan anggota ke regu, memfilter daftar menurut role, mengunduh daftar XLS per role, dan memulai reset kata sandi melalui alur aman), data pangkalan dan regu, mata lomba, isi instruksi, serta penugasan Panitia dan Juri. Meninjau nilai dengan menyetujui atau meminta revisi, menerbitkan leaderboard, dan mempublikasikan sertifikat. Pengelolaan akun harus menggunakan backend tepercaya; secret key Supabase tidak boleh dikirim ke peramban. |
 | **Panitia** | `panitia` | Pada pos/mata lomba yang ditugaskan, membuka atau menyampaikan instruksi yang disiapkan Operator, mencatat kehadiran, dan memantau status pengumpulan tugas. |
 | **Juri** | `juri` | Pada mata lomba yang ditugaskan, menilai regu berdasarkan rubrik, menyimpan draf, memberi catatan, dan mengirim nilai kepada Operator untuk ditinjau. Juri dapat memperbarui nilai sampai disetujui; perubahan yang dikirim kembali berstatus menunggu tinjauan. |
 | **Peserta** | `peserta` | Melihat tugas dan progres regu, mengoleksi lencana, melihat nilai regu setelah disetujui, serta mengakses sertifikat setelah diterbitkan. Leaderboard hanya terlihat setelah dirilis Operator. Hanya Pinru yang dapat mengirim atau memperbarui tugas atas nama regu; anggota lain hanya melihat status. |
@@ -307,7 +307,7 @@ CREATE POLICY "Users Can Update Own Profile" ON public.profiles FOR UPDATE USING
 
 * **Statistik Cepat**: Total Peserta, Total Regu, Total Lomba, Status Verifikasi Nilai.
 
-* **Manajemen Akun**: Membuat/menonaktifkan akun, menetapkan role, memetakan anggota ke regu, dan memulai reset kata sandi melalui alur backend yang aman.
+* **Manajemen Akun**: Membuat/menghapus/menonaktifkan akun, menetapkan role, memetakan anggota ke regu, memfilter daftar menurut role, mengunduh XLS dengan sheet per role, dan memulai reset kata sandi melalui alur backend yang aman.
 
 * **Manajemen Pangkalan/Sekolah (`/operator/schools`)**: Pengaturan data MI Ma'arif NU Islamiyah & MTs Ma'arif 28 Islamiyah beserta nama Kepala Madrasah dan Pembina untuk tanda tangan sertifikat.
 

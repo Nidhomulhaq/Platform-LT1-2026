@@ -42,8 +42,9 @@ dan jalankan hasilnya memakai `npm run start`.
    mempertahankan pangkalan peserta yang sudah ada dan mengubah verifikasi sertifikat.
 6. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
    dan kata sandi; alamat email internal Supabase tidak perlu diketahui pengguna.
-   Operator dapat membuat akun, mengubah role/regu, menonaktifkan akun, dan
-   memulai reset kata sandi dari `/operator/accounts`. Untuk mengaktifkan fitur
+   Operator dapat membuat atau menghapus akun, mengubah role/regu, menonaktifkan
+   akun, memulai reset kata sandi, memfilter akun berdasarkan role, dan mengunduh
+   XLS dengan sheet terpisah per role dari `/operator/accounts`. Untuk mengaktifkan fitur
    tersebut, tambahkan key admin Supabase privat ke environment server (jangan
    gunakan prefix `NEXT_PUBLIC_`):
 
