@@ -59,9 +59,20 @@ export interface Judge {
   name: string;
 }
 
+export interface EventStaff {
+  id: string;
+  name: string;
+}
+
 export interface JudgeAssignment {
   id: string;
   juriId: string;
+  competitionId: string;
+}
+
+export interface PanitiaAssignment {
+  id: string;
+  panitiaId: string;
   competitionId: string;
 }
 
@@ -69,7 +80,7 @@ export interface ScoreRecord {
   id: string;
   competitionId: string;
   teamId: string;
-  score: number;
+  score: number | null;
   status: ScoreStatus;
   feedback: string;
 }
@@ -84,7 +95,9 @@ export interface WorkspaceData {
   teams: Team[];
   participants: Participant[];
   judges: Judge[];
+  eventStaff: EventStaff[];
   judgeAssignments: JudgeAssignment[];
+  panitiaAssignments: PanitiaAssignment[];
   competitions: Competition[];
   scores: ScoreRecord[];
   submissions: Record<string, SubmissionRecord>;
@@ -445,7 +458,9 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
   teams: teamRecords,
   participants: participantRecords,
   judges: [],
+  eventStaff: [],
   judgeAssignments: [],
+  panitiaAssignments: [],
   competitions: COMPETITIONS,
   scores: scoreRecords,
   submissions: {
@@ -467,7 +482,7 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
 
 type ProfileRow = Pick<
   Database["public"]["Tables"]["profiles"]["Row"],
-  "id" | "full_name" | "role" | "school_id"
+  "id" | "full_name" | "role" | "school_id" | "is_active"
 >;
 
 const EMPTY_WORKSPACE_DATA: WorkspaceData = {
@@ -475,7 +490,9 @@ const EMPTY_WORKSPACE_DATA: WorkspaceData = {
   teams: [],
   participants: [],
   judges: [],
+  eventStaff: [],
   judgeAssignments: [],
+  panitiaAssignments: [],
   competitions: [],
   scores: [],
   submissions: {},
@@ -498,6 +515,7 @@ async function loadSupabaseWorkspace(
     membershipsResult,
     profilesResult,
     judgeAssignmentsResult,
+    panitiaAssignmentsResult,
     competitionsResult,
     scoresResult,
     submissionsResult,
@@ -507,7 +525,7 @@ async function loadSupabaseWorkspace(
     userId
       ? supabase
           .from("profiles")
-          .select("id, full_name, role, school_id")
+        .select("id, full_name, role, school_id, is_active")
           .eq("id", userId)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -521,6 +539,9 @@ async function loadSupabaseWorkspace(
       : Promise.resolve({ data: [], error: null }),
     userId
       ? supabase.from("judge_assignments").select("*")
+      : Promise.resolve({ data: [], error: null }),
+    userId
+      ? supabase.from("panitia_assignments").select("*")
       : Promise.resolve({ data: [], error: null }),
     supabase.from("competitions").select("*").order("created_at"),
     supabase.rpc("get_workspace_scores"),
@@ -539,6 +560,7 @@ async function loadSupabaseWorkspace(
     membershipsResult,
     profilesResult,
     judgeAssignmentsResult,
+    panitiaAssignmentsResult,
     competitionsResult,
     scoresResult,
     submissionsResult,
@@ -556,7 +578,7 @@ async function loadSupabaseWorkspace(
   const settings = settingsResult.data;
   const submissionRecords: WorkspaceData["submissions"] = {};
   for (const submission of submissionsResult.data ?? []) {
-    submissionRecords[submission.competition_id] = {
+    submissionRecords[`${submission.team_id}:${submission.competition_id}`] = {
       submitted: true,
       url: submission.submission_url,
     };
@@ -596,11 +618,21 @@ async function loadSupabaseWorkspace(
       judges: profileRows
         .filter((person) => person.role === "juri")
         .map((person) => ({ id: person.id, name: person.full_name })),
+      eventStaff: profileRows
+        .filter((person) => person.role === "panitia")
+        .map((person) => ({ id: person.id, name: person.full_name })),
       judgeAssignments: (judgeAssignmentsResult.data ?? []).map((assignment) => ({
         id: assignment.id,
         juriId: assignment.juri_id,
         competitionId: assignment.competition_id,
       })),
+      panitiaAssignments: (panitiaAssignmentsResult.data ?? []).map(
+        (assignment) => ({
+          id: assignment.id,
+          panitiaId: assignment.panitia_id,
+          competitionId: assignment.competition_id,
+        }),
+      ),
       competitions: (competitionsResult.data ?? []).map((competition) => ({
         id: competition.id,
         title: competition.title,
@@ -612,7 +644,7 @@ async function loadSupabaseWorkspace(
         id: score.id,
         competitionId: score.competitionId,
         teamId: score.teamId,
-        score: Number(score.score),
+        score: typeof score.score === "number" ? score.score : null,
         status: score.status,
         feedback: score.feedback,
       })),
@@ -639,6 +671,7 @@ interface WorkspaceContextValue {
   session: Session | null;
   profile: ProfileRow | null;
   currentUserId: string;
+  refreshWorkspace: () => Promise<void>;
   signIn: (loginId: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   createSchool: (
@@ -646,8 +679,14 @@ interface WorkspaceContextValue {
   ) => Promise<void>;
   createTeam: (team: Omit<Team, "id">) => Promise<void>;
   createCompetition: (competition: Competition) => Promise<void>;
+  updateCompetition: (
+    competitionId: string,
+    changes: Pick<Competition, "description">,
+  ) => Promise<void>;
   assignJudge: (juriId: string, competitionId: string) => Promise<void>;
   removeJudgeAssignment: (assignmentId: string) => Promise<void>;
+  assignPanitia: (panitiaId: string, competitionId: string) => Promise<void>;
+  removePanitiaAssignment: (assignmentId: string) => Promise<void>;
   updateScore: (
     teamId: string,
     competitionId: string,
@@ -662,6 +701,7 @@ interface WorkspaceContextValue {
   ) => Promise<void>;
   updateSchool: (schoolId: string, changes: Partial<School>) => Promise<void>;
   assignParticipants: (participantIds: string[], teamId: string) => Promise<void>;
+  setTeamPinru: (userId: string, teamId: string) => Promise<void>;
   setCompetitionActive: (competitionId: string, active: boolean) => Promise<void>;
   submitWork: (competitionId: string, url: string) => Promise<void>;
   setAttendance: (
@@ -739,6 +779,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       session,
       profile,
       currentUserId: session?.user.id ?? CURRENT_USER_ID,
+      refreshWorkspace: async () => {
+        await refreshRemoteData(session?.user.id ?? null);
+      },
       signIn: async (loginId, password) => {
         const { error } = await requireClient().auth.signInWithPassword({
           email: loginIdToAuthEmail(loginId),
@@ -822,6 +865,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           competitions: [...current.competitions, competition],
         }));
       },
+      updateCompetition: async (competitionId, changes) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("competitions")
+            .update({ description: changes.description })
+            .eq("id", competitionId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          competitions: current.competitions.map((competition) =>
+            competition.id === competitionId
+              ? { ...competition, ...changes }
+              : competition,
+          ),
+        }));
+      },
       assignJudge: async (juriId, competitionId) => {
         let assignment: JudgeAssignment = {
           id: crypto.randomUUID(),
@@ -867,6 +929,56 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setData((current) => ({
           ...current,
           judgeAssignments: current.judgeAssignments.filter(
+            (assignment) => assignment.id !== assignmentId,
+          ),
+        }));
+      },
+      assignPanitia: async (panitiaId, competitionId) => {
+        let assignment: PanitiaAssignment = {
+          id: crypto.randomUUID(),
+          panitiaId,
+          competitionId,
+        };
+        if (supabase) {
+          const { data: saved, error } = await supabase
+            .from("panitia_assignments")
+            .upsert(
+              { panitia_id: panitiaId, competition_id: competitionId },
+              { onConflict: "panitia_id,competition_id" },
+            )
+            .select("*")
+            .single();
+          if (error) throw error;
+          assignment = {
+            id: saved.id,
+            panitiaId: saved.panitia_id,
+            competitionId: saved.competition_id,
+          };
+        }
+        setData((current) => ({
+          ...current,
+          panitiaAssignments: current.panitiaAssignments.some(
+            (item) =>
+              item.panitiaId === panitiaId &&
+              item.competitionId === competitionId,
+          )
+            ? current.panitiaAssignments
+            : [...current.panitiaAssignments, assignment],
+        }));
+      },
+      removePanitiaAssignment: async (assignmentId) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("panitia_assignments")
+            .delete()
+            .eq("id", assignmentId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          panitiaAssignments: current.panitiaAssignments.filter(
             (assignment) => assignment.id !== assignmentId,
           ),
         }));
@@ -988,6 +1100,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         }));
       },
+      setTeamPinru: async (userId, teamId) => {
+        if (supabase) {
+          const { error } = await supabase.rpc("set_team_pinru", {
+            target_user_id: userId,
+            target_team_id: teamId,
+          });
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          participants: current.participants.map((participant) =>
+            participant.teamId === teamId
+              ? { ...participant, isPinru: participant.id === userId }
+              : participant,
+          ),
+        }));
+      },
       setCompetitionActive: async (competitionId, active) => {
         if (supabase) {
           const { error } = await supabase.rpc("set_competition_active", {
@@ -1006,6 +1135,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }));
       },
       submitWork: async (competitionId, url) => {
+        let submissionKey = competitionId;
         if (supabase) {
           const participant = data.participants.find(
             (person) => person.id === session?.user.id,
@@ -1013,6 +1143,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           if (!participant) {
             throw new Error("Akun ini belum dipetakan ke regu oleh operator.");
           }
+          if (!participant.isPinru) {
+            throw new Error("Hanya Pinru yang dapat mengirim tugas atas nama regu.");
+          }
+          submissionKey = `${participant.teamId}:${competitionId}`;
           const { error } = await supabase.from("submissions").upsert(
             {
               competition_id: competitionId,
@@ -1028,7 +1162,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...current,
           submissions: {
             ...current.submissions,
-            [competitionId]: { submitted: true, url },
+              [submissionKey]: { submitted: true, url },
           },
         }));
       },
@@ -1087,6 +1221,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       dataLoading,
       isConnected,
       profile,
+      refreshRemoteData,
       session,
       supabase,
     ],

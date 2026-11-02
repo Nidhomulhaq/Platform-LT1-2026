@@ -32,16 +32,24 @@ dan jalankan hasilnya memakai `npm run start`.
 3. Jalankan migration
    [`supabase/migrations/20261101011304_username_login_ids.sql`](./supabase/migrations/20261101011304_username_login_ids.sql)
    setelah skema awal. Migration menambahkan ID pengguna unik untuk login.
-4. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
+4. Jalankan migration
+   [`supabase/migrations/20261102014824_enforce_role_permissions.sql`](./supabase/migrations/20261102014824_enforce_role_permissions.sql)
+   setelah dua migration sebelumnya. Migration ini menambahkan penugasan Panitia,
+   status akun aktif, penetapan Pinru, dan pembatasan akses berbasis role melalui RLS.
+5. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
    dan kata sandi; alamat email internal Supabase tidak perlu diketahui pengguna.
-   Untuk membuat empat akun yang diminta, tambahkan key admin Supabase privat ke
-   `.env.local` (jangan gunakan prefix `NEXT_PUBLIC_`):
+   Operator dapat membuat akun, mengubah role/regu, menonaktifkan akun, dan
+   memulai reset kata sandi dari `/operator/accounts`. Untuk mengaktifkan fitur
+   tersebut, tambahkan key admin Supabase privat ke environment server (jangan
+   gunakan prefix `NEXT_PUBLIC_`):
 
    ```env
    SUPABASE_SECRET_KEY=<secret-key>
    ```
 
-   Key juga dapat diberikan lewat `SUPABASE_SERVICE_ROLE_KEY`. Jika Regu Pompom
+   Key juga dapat diberikan lewat `SUPABASE_SERVICE_ROLE_KEY`. Atur key ini hanya
+   pada server atau environment Production/Preview tepercaya di Vercel; jangan
+   kirimkan ke browser atau commit ke Git. Jika Regu Pompom
    belum ada dan database memiliki beberapa pangkalan, isi `POMPOM_SCHOOL_ID`
    dengan ID pangkalan Adellia. Jika belum ada pangkalan, skrip tetap membuat
    akun tetapi menunda pembuatan regu sampai pangkalan yang benar tersedia.
@@ -55,14 +63,12 @@ dan jalankan hasilnya memakai `npm run start`.
    `mario.jajaja` (panitia), `julio.cesar` (juri), dan `adellia.putri` (peserta).
    Regu Pompom dibuat sebagai regu putri jika belum ada dan Adellia dimasukkan ke
    regu tersebut. Kata sandi acak hanya ditulis ke CSV lokal yang diabaikan Git;
-   bagikan lewat kanal privat dan simpan dengan aman. Reset kata sandi akun
-   dilakukan pengelola melalui Supabase Authentication jika diperlukan.
-   Hapus key admin dari `.env.local` setelah provisioning selesai. Jangan pernah
-   menambahkannya ke Vercel Environment Variables atau browser. Setelah membuat
-   pangkalan Adellia di `/operator/schools`, isi `POMPOM_SCHOOL_ID` di `.env.local`
-   dengan UUID pangkalan tersebut lalu jalankan skrip kembali untuk membuat/
-   memetakan Regu Pompom.
-5. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
+   bagikan lewat kanal privat dan simpan dengan aman. Reset kata sandi juga dapat
+   dimulai Operator melalui manajemen akun. Setelah membuat pangkalan Adellia di
+   `/operator/schools`, isi `POMPOM_SCHOOL_ID` di `.env.local` dengan UUID
+   pangkalan tersebut lalu jalankan skrip kembali untuk membuat/memetakan Regu
+   Pompom.
+6. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
 
@@ -110,11 +116,13 @@ git push origin main
   | --- | --- |
   | `NEXT_PUBLIC_SUPABASE_URL` | Project URL dari Supabase |
   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key dari Supabase (atau legacy anon key) |
+  | `SUPABASE_SECRET_KEY` | Opsional; secret key server untuk fitur manajemen akun Operator |
 
-  Jangan masukkan password database atau service-role key. Gunakan Supabase staging
-  terpisah untuk deployment **Preview**; jangan arahkan preview publik ke database
-  produksi kecuali memang diinginkan. Setelah mengubah environment variable, jalankan
-  ulang deployment agar nilai baru digunakan.
+  Jangan masukkan password database. Key admin hanya boleh menjadi environment
+  server privat dan tidak boleh memakai prefix `NEXT_PUBLIC_`. Gunakan Supabase
+  staging terpisah untuk deployment **Preview**; jangan arahkan preview publik ke
+  database produksi kecuali memang diinginkan. Setelah mengubah environment
+  variable, jalankan ulang deployment agar nilai baru digunakan.
 
 ### 4. Sambungkan URL aplikasi
 
@@ -145,14 +153,17 @@ preview.
 - `/juri` — simpan draf dan kirim nilai untuk ditinjau.
 - `/panitia` — rilis tugas dan catat kehadiran regu.
 - `/operator` — ringkasan kegiatan.
+- `/operator/accounts` — buat akun, atur role/regu dan Pinru, nonaktifkan akun,
+  atau mulai reset kata sandi.
 - `/operator/scores` — setujui nilai atau minta revisi.
 - `/operator/teams`, `/operator/schools`, dan `/operator/competitions` — pengelolaan
   regu, pangkalan, dan mata lomba.
 - `/operator/publication` — atur papan skor dan akses sertifikat.
 - `/verify/[userId]` — pemeriksaan sertifikat terbit melalui Supabase atau pratinjau lokal.
 
-Aplikasi memerlukan akun Supabase untuk membuka halaman kegiatan. Pembuatan akun
-dan pemberian role dilakukan pengelola melalui Supabase; website tidak menyediakan
-pendaftaran mandiri. Data operasional menggunakan kebijakan Row Level Security. Unggahan berkas
-memerlukan konfigurasi storage terpisah. QR sertifikat menuju halaman verifikasi;
-fingerprint tampilan bukan tanda tangan elektronik.
+Aplikasi memerlukan akun Supabase untuk membuka halaman kegiatan. Website tidak
+menyediakan pendaftaran mandiri; Operator mengelola akun melalui dashboard.
+Data operasional menggunakan kebijakan Row Level Security dan migration role
+terbaru harus sudah diterapkan sebelum penggunaan. Unggahan berkas memerlukan
+konfigurasi storage terpisah. QR sertifikat menuju halaman verifikasi; fingerprint
+tampilan bukan tanda tangan elektronik.

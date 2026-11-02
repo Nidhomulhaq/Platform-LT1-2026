@@ -47,11 +47,18 @@ export type Database = {
         competition_id: string;
         created_at: string;
       }>;
+      panitia_assignments: Table<{
+        id: string;
+        panitia_id: string;
+        competition_id: string;
+        created_at: string;
+      }>;
       profiles: Table<{
         id: string;
         full_name: string;
         login_id: string | null;
         role: Database["public"]["Enums"]["user_role"];
+        is_active: boolean;
         school_id: string | null;
         phone_number: string | null;
         avatar_url: string | null;
@@ -113,7 +120,7 @@ export type Database = {
           id: string;
           competitionId: string;
           teamId: string;
-          score: number;
+          score: number | null;
           status: Database["public"]["Enums"]["score_status"];
           feedback: string;
         }>;
@@ -128,6 +135,10 @@ export type Database = {
       };
       set_competition_active: {
         Args: { target_competition_id: string; should_be_active: boolean };
+        Returns: undefined;
+      };
+      set_team_pinru: {
+        Args: { target_user_id: string; target_team_id: string };
         Returns: undefined;
       };
     };

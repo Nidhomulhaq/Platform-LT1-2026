@@ -66,6 +66,7 @@ type View =
   | "profile"
   | "submit"
   | "operator"
+  | "accounts"
   | "scores"
   | "schools"
   | "teams"
@@ -86,6 +87,7 @@ const viewTitles: Record<View, string> = {
   profile: "Profil peserta",
   submit: "Pengumpulan tugas",
   operator: "Ringkasan operator",
+  accounts: "Manajemen akun",
   scores: "Peninjauan nilai",
   schools: "Data pangkalan",
   teams: "Manajemen regu",
@@ -128,6 +130,8 @@ function IconForView({ view }: { view: View }) {
       return <BookOpen {...props} />;
     case "operator":
       return <ClipboardList {...props} />;
+    case "accounts":
+      return <Users {...props} />;
     case "scores":
       return <ClipboardCheck {...props} />;
     case "schools":
@@ -263,6 +267,7 @@ function WorkspaceFrame({
   const [menuOpen, setMenuOpen] = React.useState(false);
   const routeRole: Role =
     view === "operator" ||
+    view === "accounts" ||
     view === "scores" ||
     view === "schools" ||
     view === "teams" ||
@@ -287,6 +292,11 @@ function WorkspaceFrame({
     role === "operator"
       ? [
           { view: "operator", label: "Ringkasan", href: "/operator" },
+          {
+            view: "accounts",
+            label: "Manajemen akun",
+            href: "/operator/accounts",
+          },
           {
             view: "scores",
             label: "Peninjauan nilai",
@@ -495,8 +505,8 @@ interface PublicCertificate {
 }
 
 function isJsonRecord(
-  value: Json | undefined,
-): value is { [key: string]: Json | undefined } {
+  value: unknown,
+): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -587,6 +597,17 @@ function getScore(
   );
 }
 
+function getSubmission(
+  data: ReturnType<typeof useWorkspace>["data"],
+  teamId: string,
+  competitionId: string,
+) {
+  return (
+    data.submissions[`${teamId}:${competitionId}`] ??
+    data.submissions[competitionId]
+  );
+}
+
 function approvedScoresForTeam(
   records: ScoreRecord[],
   teamId: string,
@@ -620,15 +641,20 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
   const team = getTeam(data, currentTeamId);
   const school = data.schools.find((item) => item.id === team?.schoolId);
   const teamScores = approvedScoresForTeam(data.scores, currentTeamId);
-  const badgeCount = teamScores.filter((score) => score.score >= 80).length;
+  const badgeCount = teamScores.filter(
+    (score) => score.score !== null && score.score >= 80,
+  ).length;
   const approvedCount = data.competitions.filter(
     (competition) =>
       getScore(data.scores, currentTeamId, competition.id)?.status === "approved",
   ).length;
   const allApproved = approvedCount === data.competitions.length;
-  const teamTotal = teamScores.reduce((total, score) => total + score.score, 0);
+  const teamTotal = teamScores.reduce(
+    (total, score) => total + (score.score ?? 0),
+    0,
+  );
   const submittedCount = data.competitions.filter(
-    (competition) => data.submissions[competition.id]?.submitted,
+    (competition) => getSubmission(data, currentTeamId, competition.id)?.submitted,
   ).length;
   const progress = Math.round((approvedCount / data.competitions.length) * 100);
   const certificateReady = allApproved && data.certificatesPublished;
@@ -636,7 +662,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
     .map((teamItem) => ({
       ...teamItem,
       total: approvedScoresForTeam(data.scores, teamItem.id).reduce(
-        (sum, score) => sum + score.score,
+        (sum, score) => sum + (score.score ?? 0),
         0,
       ),
     }))
@@ -695,14 +721,17 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
               {data.competitions.map((competition, index) => {
                 const Icon = badgeIcons[index % badgeIcons.length];
                 const score = getScore(data.scores, currentTeamId, competition.id);
-                const earned = score?.status === "approved" && score.score >= 80;
+                const earned =
+                  score?.status === "approved" &&
+                  score.score !== null &&
+                  score.score >= 80;
                 return (
                   <div
                     className={`badge-item${earned ? "" : " is-locked"}`}
                     key={competition.id}
                     title={
                       earned
-                        ? `${competition.title}: ${score.score} poin`
+                        ? `${competition.title}: ${score.score ?? 0} poin`
                         : `${competition.title}: belum diraih`
                     }
                   >
@@ -710,7 +739,9 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
                       <Icon aria-hidden="true" />
                     </span>
                     <strong>{competition.title}</strong>
-                    <span>{earned ? `${score.score} poin` : "Belum diraih"}</span>
+                    <span>
+                      {earned ? `${score.score ?? 0} poin` : "Belum diraih"}
+                    </span>
                   </div>
                 );
               })}
@@ -727,7 +758,9 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
               {data.competitions.map((competition, index) => {
                 const Icon = competitionIcons[index % competitionIcons.length];
                 const score = getScore(data.scores, currentTeamId, competition.id);
-                const submitted = data.submissions[competition.id]?.submitted ?? false;
+                const submitted =
+                  getSubmission(data, currentTeamId, competition.id)?.submitted ??
+                  false;
                 const status = taskStatus(score, submitted);
                 const href = `/dashboard/submit/${competition.id}`;
                 return (
@@ -931,7 +964,7 @@ function ParticipantLeaderboard() {
         ...team,
         schoolName: school?.name ?? "Pangkalan belum dipetakan",
         approvedCount: scores.length,
-        total: scores.reduce((sum, score) => sum + score.score, 0),
+        total: scores.reduce((sum, score) => sum + (score.score ?? 0), 0),
       };
     })
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
@@ -1094,13 +1127,13 @@ function ParticipantScoreRecap() {
               <StatusPill
                 status={
                   score?.status ??
-                  (data.submissions[competition.id]?.submitted
+                  (getSubmission(data, ownTeamId, competition.id)?.submitted
                     ? "pending_review"
                     : "not_started")
                 }
               />
               <strong className="participant-score-value">
-                {score?.status === "approved" ? score.score : "—"}
+                {score?.status === "approved" ? score.score ?? "—" : "—"}
                 <span>{score?.status === "approved" ? " / 100" : ""}</span>
               </strong>
             </div>
@@ -1652,7 +1685,7 @@ function OperatorDashboard() {
                           <span className="table-secondary">{school?.schoolType}</span>
                         </td>
                         <td>{competition?.title ?? "Mata lomba"}</td>
-                        <td className="numeric">{score.score}</td>
+                        <td className="numeric">{score.score ?? "—"}</td>
                         <td>
                           <StatusPill status={score.status} />
                         </td>
@@ -1717,6 +1750,539 @@ function OperatorDashboard() {
           </section>
         </div>
       </div>
+    </>
+  );
+}
+
+type ManagedAccount = {
+  id: string;
+  loginId: string;
+  fullName: string;
+  role: Role;
+  teamId: string | null;
+  isPinru: boolean;
+  isActive: boolean;
+};
+
+function isManagedAccount(value: unknown): value is ManagedAccount {
+  if (!isJsonRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.loginId === "string" &&
+    typeof value.fullName === "string" &&
+    (value.role === "operator" ||
+      value.role === "panitia" ||
+      value.role === "juri" ||
+      value.role === "peserta") &&
+    (typeof value.teamId === "string" || value.teamId === null) &&
+    typeof value.isPinru === "boolean" &&
+    typeof value.isActive === "boolean"
+  );
+}
+
+function AccountManagement({ notify }: { notify: Notify }) {
+  const {
+    data,
+    isConnected,
+    currentUserId,
+    refreshWorkspace,
+    setTeamPinru,
+  } = useWorkspace();
+  const [accounts, setAccounts] = React.useState<ManagedAccount[]>([]);
+  const [selectedRoles, setSelectedRoles] = React.useState<Record<string, Role>>(
+    {},
+  );
+  const [selectedTeams, setSelectedTeams] = React.useState<
+    Record<string, string>
+  >({});
+  const [loginId, setLoginId] = React.useState("");
+  const [fullName, setFullName] = React.useState("");
+  const [role, setRole] = React.useState<Role>("peserta");
+  const [teamId, setTeamId] = React.useState("");
+  const [isPinru, setIsPinru] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+  const [busyAccountId, setBusyAccountId] = React.useState("");
+  const [apiError, setApiError] = React.useState("");
+  const [temporaryPassword, setTemporaryPassword] = React.useState("");
+
+  const request = async (method: string, body?: Record<string, unknown>) => {
+    const response = await fetch("/api/operator/accounts", {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload: unknown = await response.json();
+    if (!isJsonRecord(payload)) {
+      throw new Error("Respons pengelolaan akun tidak valid.");
+    }
+    if (!response.ok) {
+      throw new Error(
+        typeof payload.error === "string"
+          ? payload.error
+          : "Permintaan pengelolaan akun gagal.",
+      );
+    }
+    return payload;
+  };
+
+  const refreshAccounts = React.useCallback(async () => {
+    setLoading(true);
+    setApiError("");
+    try {
+      const payload = await request("GET");
+      if (!Array.isArray(payload.accounts) || !payload.accounts.every(isManagedAccount)) {
+        throw new Error("Data akun dari server tidak sesuai format.");
+      }
+      setAccounts(payload.accounts);
+      setSelectedRoles(
+        Object.fromEntries(
+          payload.accounts.map((account) => [account.id, account.role]),
+        ),
+      );
+      setSelectedTeams(
+        Object.fromEntries(
+          payload.accounts.map((account) => [account.id, account.teamId ?? ""]),
+        ),
+      );
+    } catch (error) {
+      console.error("Gagal memuat daftar akun.", error);
+      setApiError(
+        error instanceof Error ? error.message : "Daftar akun gagal dimuat.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isConnected) void refreshAccounts();
+  }, [isConnected, refreshAccounts]);
+
+  const createAccount = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setTemporaryPassword("");
+    const shouldBePinru = role === "peserta" && isPinru && Boolean(teamId);
+    try {
+      const payload = await request("POST", {
+        action: "create",
+        loginId,
+        fullName,
+        role,
+        teamId: role === "peserta" ? teamId || null : null,
+        isPinru: false,
+      });
+      const createdAccount = payload.account;
+      if (!isManagedAccount(createdAccount) || typeof payload.temporaryPassword !== "string") {
+        throw new Error("Server tidak mengembalikan informasi akun yang valid.");
+      }
+      setTemporaryPassword(payload.temporaryPassword);
+      setLoginId("");
+      setFullName("");
+      setRole("peserta");
+      setTeamId("");
+      setIsPinru(false);
+
+      let account = createdAccount;
+      if (shouldBePinru && createdAccount.teamId) {
+        try {
+          await setTeamPinru(createdAccount.id, createdAccount.teamId);
+          account = { ...createdAccount, isPinru: true };
+        } catch (error) {
+          console.error("Akun dibuat, tetapi penetapan Pinru gagal.", error);
+          setAccounts((current) => [...current, createdAccount]);
+          setSelectedRoles((current) => ({
+            ...current,
+            [createdAccount.id]: createdAccount.role,
+          }));
+          setSelectedTeams((current) => ({
+            ...current,
+            [createdAccount.id]: createdAccount.teamId ?? "",
+          }));
+          await refreshAccounts();
+          notify(
+            `Akun berhasil dibuat, tetapi penetapan Pinru gagal: ${
+              error instanceof Error ? error.message : "kesalahan tidak diketahui"
+            }`,
+            true,
+          );
+          return;
+        }
+      }
+
+      setAccounts((current) => [...current, account]);
+      setSelectedRoles((current) => ({
+        ...current,
+        [account.id]: account.role,
+      }));
+      setSelectedTeams((current) => ({
+        ...current,
+        [account.id]: account.teamId ?? "",
+      }));
+      try {
+        await refreshWorkspace();
+      } catch (error) {
+        console.error("Akun dibuat, tetapi data workspace gagal disegarkan.", error);
+        notify("Akun dibuat, tetapi data workspace gagal disegarkan.", true);
+        return;
+      }
+      notify("Akun dibuat. Simpan kata sandi sementara dan bagikan secara privat.");
+    } catch (error) {
+      console.error("Gagal membuat akun.", error);
+      notify(error instanceof Error ? error.message : "Akun gagal dibuat.", true);
+    }
+  };
+
+  const updateAccount = async (
+    account: ManagedAccount,
+    action: "toggle-active" | "reset-password" | "update-role" | "map-team",
+  ) => {
+    setBusyAccountId(account.id);
+    setTemporaryPassword("");
+    try {
+      const payload = await request("PATCH", {
+        action,
+        userId: account.id,
+        ...(action === "toggle-active"
+          ? { isActive: !account.isActive }
+          : action === "update-role"
+            ? { role: selectedRoles[account.id] }
+            : action === "map-team"
+              ? { teamId: selectedTeams[account.id] || null }
+              : {}),
+      });
+      if (action === "toggle-active") {
+        if (typeof payload.isActive !== "boolean") {
+          throw new Error("Server tidak mengembalikan status akun yang valid.");
+        }
+        setAccounts((current) =>
+          current.map((item) =>
+            item.id === account.id
+              ? { ...item, isActive: payload.isActive as boolean }
+              : item,
+          ),
+        );
+        await refreshWorkspace();
+        notify(
+          payload.isActive ? "Akun berhasil diaktifkan." : "Akun dinonaktifkan.",
+        );
+      } else {
+        if (action === "reset-password") {
+          if (typeof payload.temporaryPassword !== "string") {
+            throw new Error("Server tidak mengembalikan kata sandi sementara.");
+          }
+          setTemporaryPassword(payload.temporaryPassword);
+          notify("Kata sandi sementara berhasil dibuat. Bagikan secara privat.");
+        } else if (action === "update-role") {
+          const updatedRole = payload.role;
+          if (
+            updatedRole !== "operator" &&
+            updatedRole !== "panitia" &&
+            updatedRole !== "juri" &&
+            updatedRole !== "peserta"
+          ) {
+            throw new Error("Server tidak mengembalikan peran yang valid.");
+          }
+          setAccounts((current) =>
+            current.map((item) =>
+              item.id === account.id
+                ? {
+                    ...item,
+                    role: updatedRole,
+                    ...(updatedRole === "peserta"
+                      ? {}
+                      : { teamId: null, isPinru: false }),
+                  }
+                : item,
+            ),
+          );
+          await refreshWorkspace();
+          notify("Peran akun berhasil diperbarui.");
+        } else {
+          if (
+            (typeof payload.teamId !== "string" && payload.teamId !== null) ||
+            typeof payload.isPinru !== "boolean"
+          ) {
+            throw new Error("Server tidak mengembalikan pemetaan regu yang valid.");
+          }
+          setAccounts((current) =>
+            current.map((item) =>
+              item.id === account.id
+                ? {
+                    ...item,
+                    teamId: payload.teamId as string | null,
+                    isPinru: payload.isPinru as boolean,
+                  }
+                : item,
+            ),
+          );
+          await refreshWorkspace();
+          notify("Pemetaan regu berhasil diperbarui.");
+        }
+      }
+    } catch (error) {
+      console.error("Gagal memperbarui akun.", error);
+      notify(error instanceof Error ? error.message : "Akun gagal diperbarui.", true);
+    } finally {
+      setBusyAccountId("");
+    }
+  };
+
+  return (
+    <>
+      <PageHeading
+        title="Manajemen akun"
+        description="Buat akun, tetapkan peran dan regu, nonaktifkan akses, atau mulai reset kata sandi."
+      />
+      {!isConnected ? (
+        <div className="notice" role="note">
+          <CircleHelp aria-hidden="true" />
+          <p>Pengelolaan akun tersedia setelah aplikasi terhubung ke Supabase.</p>
+        </div>
+      ) : (
+        <>
+          <section className="panel panel-pad">
+            <SectionHeading
+              title="Buat akun"
+              detail="Kata sandi sementara hanya ditampilkan setelah akun berhasil dibuat."
+            />
+            <form className="school-fields" onSubmit={createAccount}>
+              <label>
+                <span className="field-label">Nama lengkap</span>
+                <input
+                  className="field"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  minLength={1}
+                  maxLength={150}
+                  required
+                />
+              </label>
+              <label>
+                <span className="field-label">ID pengguna</span>
+                <input
+                  className="field"
+                  value={loginId}
+                  onChange={(event) => setLoginId(event.target.value)}
+                  pattern="[a-z0-9]+([.-][a-z0-9]+)*"
+                  title="Gunakan huruf kecil, angka, titik, atau tanda hubung."
+                  required
+                />
+              </label>
+              <label>
+                <span className="field-label">Peran</span>
+                <select
+                  className="field"
+                  value={role}
+                  onChange={(event) => {
+                    setRole(event.target.value as Role);
+                    setIsPinru(false);
+                  }}
+                >
+                  <option value="peserta">Peserta</option>
+                  <option value="panitia">Panitia</option>
+                  <option value="juri">Juri</option>
+                  <option value="operator">Operator pusat</option>
+                </select>
+              </label>
+              {role === "peserta" ? (
+                <>
+                  <label>
+                    <span className="field-label">Regu</span>
+                    <select
+                      className="field"
+                      value={teamId}
+                      onChange={(event) => setTeamId(event.target.value)}
+                    >
+                      <option value="">Belum dipetakan</option>
+                      {data.teams.map((team) => (
+                        <option value={team.id} key={team.id}>
+                          {team.name} · {team.category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={isPinru}
+                      disabled={!teamId}
+                      onChange={(event) => setIsPinru(event.target.checked)}
+                    />
+                    Tetapkan sebagai Pinru
+                  </label>
+                </>
+              ) : null}
+              <button
+                className="button button-small"
+                type="submit"
+                disabled={loading || !fullName.trim() || !loginId.trim()}
+              >
+                Buat akun
+              </button>
+            </form>
+          </section>
+
+          {temporaryPassword ? (
+            <div className="notice" role="status" style={{ marginTop: 16 }}>
+              <LockKeyhole aria-hidden="true" />
+              <p>
+                Kata sandi sementara (tampilkan sekali dan bagikan secara privat):
+                <code>{temporaryPassword}</code>
+              </p>
+            </div>
+          ) : null}
+
+          <section className="panel panel-pad" style={{ marginTop: 18 }}>
+            <SectionHeading
+              title="Akun terdaftar"
+              detail={loading ? "Memuat akun…" : `${accounts.length} akun`}
+              action={
+                <button
+                  className="button button-secondary button-small"
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void refreshAccounts()}
+                >
+                  Muat ulang
+                </button>
+              }
+            />
+            {apiError ? (
+              <p className="field-hint" role="alert">
+                {apiError}. Pastikan migration hak akses sudah diterapkan dan
+                secret Supabase tersedia di server.
+              </p>
+            ) : loading ? (
+              <p className="inline-note">Memuat daftar akun…</p>
+            ) : accounts.length ? (
+              <div className="activity-list">
+                {accounts.map((account) => {
+                  const team = data.teams.find((item) => item.id === account.teamId);
+                  return (
+                    <div className="activity-row" key={account.id}>
+                      <span className="activity-copy">
+                        <strong>{account.fullName}</strong>
+                        <span>
+                          @{account.loginId} · {account.role}
+                          {team ? ` · Regu ${team.name}` : ""}
+                          {account.isPinru ? " · Pinru" : ""}
+                        </span>
+                      </span>
+                      <div className="table-actions">
+                        <label className="sr-only" htmlFor={`account-role-${account.id}`}>
+                          Peran untuk {account.fullName}
+                        </label>
+                        <select
+                          id={`account-role-${account.id}`}
+                          className="filter-select"
+                          value={selectedRoles[account.id] ?? account.role}
+                          disabled={busyAccountId === account.id}
+                          onChange={(event) =>
+                            setSelectedRoles((current) => ({
+                              ...current,
+                              [account.id]: event.target.value as Role,
+                            }))
+                          }
+                        >
+                          <option value="peserta">Peserta</option>
+                          <option value="panitia">Panitia</option>
+                          <option value="juri">Juri</option>
+                          <option value="operator">Operator</option>
+                        </select>
+                        <button
+                          className="button button-secondary button-small"
+                          type="button"
+                          disabled={
+                            busyAccountId === account.id ||
+                            account.id === currentUserId ||
+                            (selectedRoles[account.id] ?? account.role) === account.role
+                          }
+                          onClick={() =>
+                            void updateAccount(account, "update-role")
+                          }
+                        >
+                          Simpan peran
+                        </button>
+                        {account.role === "peserta" ? (
+                          <>
+                            <label
+                              className="sr-only"
+                              htmlFor={`account-team-${account.id}`}
+                            >
+                              Regu untuk {account.fullName}
+                            </label>
+                            <select
+                              id={`account-team-${account.id}`}
+                              className="filter-select"
+                              value={selectedTeams[account.id] ?? ""}
+                              disabled={busyAccountId === account.id}
+                              onChange={(event) =>
+                                setSelectedTeams((current) => ({
+                                  ...current,
+                                  [account.id]: event.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">Belum dipetakan</option>
+                              {data.teams.map((team) => (
+                                <option key={team.id} value={team.id}>
+                                  {team.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              className="button button-secondary button-small"
+                              type="button"
+                              disabled={
+                                busyAccountId === account.id ||
+                                (selectedTeams[account.id] ?? "") ===
+                                  (account.teamId ?? "")
+                              }
+                              onClick={() => void updateAccount(account, "map-team")}
+                            >
+                              Simpan regu
+                            </button>
+                          </>
+                        ) : null}
+                        <span
+                          className={`status-pill${account.isActive ? " is-approved" : ""}`}
+                        >
+                          {account.isActive ? "Aktif" : "Nonaktif"}
+                        </span>
+                        <button
+                          className="button button-secondary button-small"
+                          type="button"
+                          disabled={busyAccountId === account.id}
+                          onClick={() =>
+                            void updateAccount(account, "reset-password")
+                          }
+                        >
+                          Reset kata sandi
+                        </button>
+                        <button
+                          className="button button-small"
+                          type="button"
+                          disabled={busyAccountId === account.id}
+                          onClick={() =>
+                            void updateAccount(account, "toggle-active")
+                          }
+                        >
+                          {account.isActive ? "Nonaktifkan" : "Aktifkan"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Users aria-hidden="true" />
+                <strong>Belum ada akun yang dapat ditampilkan</strong>
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </>
   );
 }
@@ -1856,7 +2422,7 @@ function OperatorScores({ notify }: { notify: Notify }) {
                         </span>
                       </td>
                       <td>{competition?.title}</td>
-                      <td className="numeric">{score.score}</td>
+                      <td className="numeric">{score.score ?? "—"}</td>
                       <td>{score.feedback || "Belum ada catatan"}</td>
                       <td>
                         <StatusPill status={score.status} />
@@ -2198,7 +2764,7 @@ function JuryScoring({ notify }: { notify: Notify }) {
     const saved = getScore(data.scores, teamId, competitionId);
     return (
       scoreDrafts[teamId] ?? {
-        score: saved ? String(saved.score) : "",
+        score: saved?.score === null || !saved ? "" : String(saved.score),
         feedback: saved?.feedback ?? "",
       }
     );
@@ -2225,11 +2791,24 @@ function JuryScoring({ notify }: { notify: Notify }) {
       notify("Masukkan nilai antara 0 sampai 100.", true);
       return;
     }
+    const saved = getScore(data.scores, teamId, competitionId);
+    const nextStatus =
+      saved?.status === "pending_review" && status === "draft"
+        ? "pending_review"
+        : status;
     try {
-      await updateScore(teamId, competitionId, value, draft.feedback.trim(), status);
+      await updateScore(
+        teamId,
+        competitionId,
+        value,
+        draft.feedback.trim(),
+        nextStatus,
+      );
       notify(
-        status === "pending_review"
-          ? "Nilai dikirim ke operator untuk ditinjau."
+        nextStatus === "pending_review"
+          ? saved?.status === "pending_review"
+            ? "Perubahan nilai tersimpan dan tetap menunggu tinjauan operator."
+            : "Nilai dikirim ke operator untuk ditinjau."
           : "Draf nilai berhasil disimpan.",
       );
     } catch (error) {
@@ -2296,8 +2875,8 @@ function JuryScoring({ notify }: { notify: Notify }) {
         <div className="notice" role="note">
           <CircleHelp aria-hidden="true" />
           <p>
-            Nilai yang dikirim akan dikunci sementara sampai operator menyetujui
-            atau meminta revisi.
+            Nilai yang dikirim tetap dapat diperbarui sampai operator
+            menyetujuinya. Setelah disetujui, nilai terkunci untuk juri.
           </p>
         </div>
         <div className="table-scroll" style={{ marginTop: 14 }}>
@@ -2318,9 +2897,7 @@ function JuryScoring({ notify }: { notify: Notify }) {
                 );
                 const saved = getScore(data.scores, team.id, competitionId);
                 const draft = draftFor(team.id);
-                const disabled =
-                  saved?.status === "pending_review" ||
-                  saved?.status === "approved";
+                const disabled = saved?.status === "approved";
                 return (
                   <tr key={team.id}>
                     <td>
@@ -2425,18 +3002,32 @@ function SwitchControl({
 }
 
 function CompetitionManagement({ notify }: { notify: Notify }) {
-  const { data, createCompetition, assignJudge, removeJudgeAssignment } =
-    useWorkspace();
+  const {
+    data,
+    createCompetition,
+    updateCompetition,
+    assignJudge,
+    removeJudgeAssignment,
+    assignPanitia,
+    removePanitiaAssignment,
+  } = useWorkspace();
   const [competitionId, setCompetitionId] = React.useState("");
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [selectedJudges, setSelectedJudges] = React.useState<
     Record<string, string>
   >({});
+  const [selectedPanitia, setSelectedPanitia] = React.useState<
+    Record<string, string>
+  >({});
+  const [descriptionDrafts, setDescriptionDrafts] = React.useState<
+    Record<string, string>
+  >({});
   const [taskType, setTaskType] =
     React.useState<Competition["taskType"]>("live");
   const [creating, setCreating] = React.useState(false);
   const [assignmentBusy, setAssignmentBusy] = React.useState(false);
+  const [savingInstruction, setSavingInstruction] = React.useState("");
 
   const updateTitle = (value: string) => {
     setTitle(value);
@@ -2555,6 +3146,60 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
                         ? "CBT"
                         : "Unggah"}
                   </span>
+                  <label
+                    className="sr-only"
+                    htmlFor={`competition-instruction-${competition.id}`}
+                  >
+                    Instruksi tugas {competition.title}
+                  </label>
+                  <textarea
+                    id={`competition-instruction-${competition.id}`}
+                    className="field"
+                    rows={3}
+                    value={
+                      descriptionDrafts[competition.id] ??
+                      competition.description
+                    }
+                    onChange={(event) =>
+                      setDescriptionDrafts((current) => ({
+                        ...current,
+                        [competition.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Tulis instruksi tugas untuk peserta"
+                  />
+                  <button
+                    className="button button-secondary button-small"
+                    type="button"
+                    disabled={
+                      savingInstruction === competition.id ||
+                      (descriptionDrafts[competition.id] ??
+                        competition.description) === competition.description
+                    }
+                    onClick={() => {
+                      setSavingInstruction(competition.id);
+                      void updateCompetition(competition.id, {
+                        description:
+                          descriptionDrafts[competition.id] ??
+                          competition.description,
+                      })
+                        .then(() => {
+                          setDescriptionDrafts((current) => {
+                            const next = { ...current };
+                            delete next[competition.id];
+                            return next;
+                          });
+                          notify("Instruksi tugas berhasil disimpan.");
+                        })
+                        .catch((error: unknown) => {
+                          console.error("Gagal menyimpan instruksi tugas.", error);
+                          notify("Instruksi tugas gagal disimpan.", true);
+                        })
+                        .finally(() => setSavingInstruction(""));
+                    }}
+                  >
+                    Simpan instruksi
+                  </button>
                 </span>
                 <span
                   className={`status-pill${competition.isActive ? " is-approved" : ""}`}
@@ -2684,6 +3329,134 @@ function CompetitionManagement({ notify }: { notify: Notify }) {
                           .catch((error: unknown) => {
                             console.error("Gagal menetapkan juri.", error);
                             notify("Juri gagal ditugaskan.", true);
+                          })
+                          .finally(() => setAssignmentBusy(false));
+                      }}
+                    >
+                      Tugaskan
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      <section className="panel panel-pad" style={{ marginTop: 18 }}>
+        <SectionHeading
+          title="Penugasan panitia"
+          detail="Panitia hanya dapat merilis instruksi dan mencatat kehadiran pada pos yang ditugaskan."
+        />
+        {!data.eventStaff.length ? (
+          <div className="empty-state">
+            <Users aria-hidden="true" />
+            <strong>Belum ada akun Panitia</strong>
+            <p>Buat akun dengan role Panitia pada menu Manajemen akun.</p>
+          </div>
+        ) : !data.competitions.length ? (
+          <p className="inline-note">
+            Tambahkan mata lomba sebelum menetapkan Panitia.
+          </p>
+        ) : (
+          <div className="activity-list">
+            {data.competitions.map((competition) => {
+              const assigned = data.panitiaAssignments.filter(
+                (assignment) => assignment.competitionId === competition.id,
+              );
+              const assignedIds = new Set(
+                assigned.map((assignment) => assignment.panitiaId),
+              );
+              const availableStaff = data.eventStaff.filter(
+                (member) => !assignedIds.has(member.id),
+              );
+              const selectedStaff = availableStaff.some(
+                (member) => member.id === selectedPanitia[competition.id],
+              )
+                ? selectedPanitia[competition.id]
+                : (availableStaff[0]?.id ?? "");
+              return (
+                <div className="activity-row" key={competition.id}>
+                  <span className="activity-copy">
+                    <strong>{competition.title}</strong>
+                    <span>
+                      {assigned.length
+                        ? assigned
+                            .map(
+                              (assignment) =>
+                                data.eventStaff.find(
+                                  (member) =>
+                                    member.id === assignment.panitiaId,
+                                )?.name,
+                            )
+                            .filter(Boolean)
+                            .join(", ")
+                        : "Belum ada Panitia yang ditugaskan"}
+                    </span>
+                    {assigned.map((assignment) => {
+                      const member = data.eventStaff.find(
+                        (item) => item.id === assignment.panitiaId,
+                      );
+                      return (
+                        <button
+                          className="text-link"
+                          disabled={assignmentBusy}
+                          key={assignment.id}
+                          onClick={() => {
+                            setAssignmentBusy(true);
+                            void removePanitiaAssignment(assignment.id)
+                              .then(() =>
+                                notify(
+                                  `Penugasan ${member?.name ?? "Panitia"} dihapus.`,
+                                ),
+                              )
+                              .catch((error: unknown) => {
+                                console.error(
+                                  "Gagal menghapus penugasan Panitia.",
+                                  error,
+                                );
+                                notify("Penugasan Panitia gagal dihapus.", true);
+                              })
+                              .finally(() => setAssignmentBusy(false));
+                          }}
+                        >
+                          Hapus {member?.name ?? "Panitia"}
+                        </button>
+                      );
+                    })}
+                  </span>
+                  <div className="form-row">
+                    <select
+                      aria-label={`Pilih Panitia untuk ${competition.title}`}
+                      className="field"
+                      disabled={!availableStaff.length || assignmentBusy}
+                      value={selectedStaff}
+                      onChange={(event) =>
+                        setSelectedPanitia((current) => ({
+                          ...current,
+                          [competition.id]: event.target.value,
+                        }))
+                      }
+                    >
+                      {availableStaff.length ? (
+                        availableStaff.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">Semua Panitia sudah ditugaskan</option>
+                      )}
+                    </select>
+                    <button
+                      className="button button-small"
+                      disabled={!selectedStaff || assignmentBusy}
+                      onClick={() => {
+                        setAssignmentBusy(true);
+                        void assignPanitia(selectedStaff, competition.id)
+                          .then(() => notify("Panitia berhasil ditugaskan."))
+                          .catch((error: unknown) => {
+                            console.error("Gagal menetapkan Panitia.", error);
+                            notify("Panitia gagal ditugaskan.", true);
                           })
                           .finally(() => setAssignmentBusy(false));
                       }}
@@ -2827,7 +3600,7 @@ function PublicationSettings({ notify }: { notify: Notify }) {
 }
 
 function TeamManagement({ notify }: { notify: Notify }) {
-  const { data, assignParticipants, createTeam } = useWorkspace();
+  const { data, assignParticipants, createTeam, setTeamPinru } = useWorkspace();
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [targetTeam, setTargetTeam] = React.useState(data.teams[0]?.id ?? "");
   const [newTeamName, setNewTeamName] = React.useState("");
@@ -3022,6 +3795,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
                 <th>Regu saat ini</th>
                 <th>Pangkalan</th>
                 <th>Peran</th>
+                <th>Pinru</th>
               </tr>
             </thead>
             <tbody>
@@ -3052,6 +3826,29 @@ function TeamManagement({ notify }: { notify: Notify }) {
                         {person.isPinru ? "Pinru" : "Anggota"}
                       </span>
                     </td>
+                    <td>
+                      <button
+                        className="button button-secondary button-small"
+                        type="button"
+                        disabled={!team || person.isPinru}
+                        onClick={() => {
+                          if (!team) return;
+                          void setTeamPinru(person.id, team.id)
+                            .then(() =>
+                              notify(`${person.name} ditetapkan sebagai Pinru.`),
+                            )
+                            .catch((error: unknown) => {
+                              console.error("Gagal menetapkan Pinru.", error);
+                              notify(
+                                "Pinru gagal diperbarui. Pastikan peserta anggota regu yang dipilih.",
+                                true,
+                              );
+                            });
+                        }}
+                      >
+                        {person.isPinru ? "Pinru saat ini" : "Jadikan Pinru"}
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -3064,11 +3861,33 @@ function TeamManagement({ notify }: { notify: Notify }) {
 }
 
 function EventCoordination({ notify }: { notify: Notify }) {
-      const { data, setAttendance, setCompetitionActive, isConnected } = useWorkspace();
+      const {
+        data,
+        setAttendance,
+        setCompetitionActive,
+        isConnected,
+        currentUserId,
+      } = useWorkspace();
+      const assignedCompetitions = isConnected
+        ? data.competitions.filter((item) =>
+            data.panitiaAssignments.some(
+              (assignment) =>
+                assignment.panitiaId === currentUserId &&
+                assignment.competitionId === item.id,
+            ),
+          )
+        : data.competitions;
       const [competitionId, setCompetitionId] = React.useState(
-        data.competitions[0]?.id ?? "",
+        assignedCompetitions[0]?.id ?? "",
       );
-      const competition = getCompetition(data, competitionId);
+      React.useEffect(() => {
+        if (!assignedCompetitions.some((item) => item.id === competitionId)) {
+          setCompetitionId(assignedCompetitions[0]?.id ?? "");
+        }
+      }, [assignedCompetitions, competitionId]);
+      const competition = assignedCompetitions.find(
+        (item) => item.id === competitionId,
+      );
       const attendedCount = data.teams.filter(
         (team) => data.attendance[`${team.id}:${competitionId}`],
       ).length;
@@ -3103,8 +3922,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
         <>
           <PageHeading
             title="Pos kegiatan"
-            description="Atur tugas yang sedang berjalan dan catat kehadiran tiap regu."
+            description="Rilis instruksi Operator, catat kehadiran, dan pantau tugas pada penugasan Anda."
           />
+          {!assignedCompetitions.length ? (
+            <div className="empty-state">
+              <CalendarCheck aria-hidden="true" />
+              <strong>Belum ada pos yang ditugaskan</strong>
+              <p>Minta Operator menetapkan pos kegiatan untuk akun Panitia ini.</p>
+            </div>
+          ) : (
           <section className="panel panel-pad">
             <div className="filter-row">
               <label className="field-label" htmlFor="event-competition">
@@ -3117,9 +3943,11 @@ function EventCoordination({ notify }: { notify: Notify }) {
                 onChange={(event) => setCompetitionId(event.target.value)}
               >
                 {data.competitions.map((item) => (
+                  assignedCompetitions.some((assigned) => assigned.id === item.id) ? (
                   <option value={item.id} key={item.id}>
                     {item.title}
                   </option>
+                  ) : null
                 ))}
               </select>
               {competition ? (
@@ -3165,7 +3993,11 @@ function EventCoordination({ notify }: { notify: Notify }) {
                       <strong>Regu {team.name}</strong>
                       <span>
                         {school?.schoolType} · {team.category} ·{" "}
-                        {score ? "Tugas sudah dinilai" : "Menunggu tugas"}
+                        {getSubmission(data, team.id, competitionId)?.submitted
+                          ? score
+                            ? "Tugas sudah dinilai"
+                            : "Tugas sudah dikirim"
+                          : "Menunggu tugas"}
                       </span>
                     </span>
                     <div className="team-members-inline">
@@ -3192,6 +4024,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
               })}
             </div>
           </section>
+          )}
         </>
       );
     }
@@ -3210,13 +4043,14 @@ function EventCoordination({ notify }: { notify: Notify }) {
       );
       const currentTeamId =
         currentParticipant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
+      const canSubmit = currentParticipant?.isPinru ?? !isConnected;
       const competition = getCompetition(data, competitionId);
       const [url, setUrl] = React.useState(
-        data.submissions[competitionId]?.url ?? "",
+        getSubmission(data, currentTeamId, competitionId)?.url ?? "",
       );
       const [answers, setAnswers] = React.useState<Record<number, string>>({});
       const [fileName, setFileName] = React.useState("");
-      const submission = data.submissions[competitionId];
+      const submission = getSubmission(data, currentTeamId, competitionId);
       const existingScore = getScore(data.scores, currentTeamId, competitionId);
 
       if (!competition) {
@@ -3301,6 +4135,14 @@ function EventCoordination({ notify }: { notify: Notify }) {
                 <div className="notice" role="status">
                   <Clock3 aria-hidden="true" />
                   <p>Panitia belum merilis tugas ini. Coba kembali setelah ada pengumuman.</p>
+                </div>
+              ) : !canSubmit ? (
+                <div className="notice" role="note">
+                  <LockKeyhole aria-hidden="true" />
+                  <p>
+                    Hanya Pinru yang dapat mengirim atau memperbarui tugas atas
+                    nama regu. Anggota dapat melihat status pengumpulan.
+                  </p>
                 </div>
               ) : (
                 <form className="form-stack" onSubmit={submit}>
@@ -3539,7 +4381,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
       const [fingerprint, setFingerprint] = React.useState("Menghitung sidik data…");
       const scoreTotal = teamScores.reduce(
         (total, score) =>
-          total + (score?.status === "approved" ? score.score : 0),
+          total + (score?.status === "approved" ? score.score ?? 0 : 0),
         0,
       );
       const average = allApproved
@@ -3951,6 +4793,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
       const isAuthView = view === "login";
       const requiredRole: Role | null =
         view === "operator" ||
+        view === "accounts" ||
         view === "scores" ||
         view === "schools" ||
         view === "teams" ||
@@ -4081,6 +4924,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
           break;
         case "operator":
           content = <OperatorDashboard />;
+          break;
+        case "accounts":
+          content = <AccountManagement notify={notify} />;
           break;
         case "scores":
           content = <OperatorScores notify={notify} />;

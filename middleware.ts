@@ -3,11 +3,29 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/supabase/database.types";
 
 const publicPaths = ["/login"];
+const roleRoutes: { prefix: string; role: Database["public"]["Enums"]["user_role"] }[] = [
+  { prefix: "/operator", role: "operator" },
+  { prefix: "/juri", role: "juri" },
+  { prefix: "/panitia", role: "panitia" },
+  { prefix: "/dashboard", role: "peserta" },
+  { prefix: "/leaderboard", role: "peserta" },
+  { prefix: "/scan-task", role: "peserta" },
+  { prefix: "/score-recap", role: "peserta" },
+  { prefix: "/profile", role: "peserta" },
+];
 
 function isPublicPath(pathname: string) {
-  return publicPaths.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  return (
+    publicPaths.some(
+      (path) => pathname === path || pathname.startsWith(`${path}/`),
+    ) || pathname === "/verify" || pathname.startsWith("/verify/")
   );
+}
+
+function requiredRoleForPath(pathname: string) {
+  return roleRoutes.find(
+    ({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  )?.role;
 }
 
 export async function middleware(request: NextRequest) {
@@ -64,11 +82,73 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  if (user && !isPublicPath(request.nextUrl.pathname)) {
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role,is_active")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profileError) {
+      console.error("Gagal memvalidasi role akun.", profileError.message);
+      return new NextResponse("Hak akses akun gagal diverifikasi.", {
+        status: 503,
+      });
+    }
+    if (!profile || !profile.is_active) {
+      if (request.nextUrl.pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Akun tidak aktif atau profil tidak tersedia." },
+          { status: 403 },
+        );
+      }
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.search = "";
+      loginUrl.searchParams.set("access", "disabled");
+      return NextResponse.redirect(loginUrl);
+    }
+    const requiredRole = requiredRoleForPath(request.nextUrl.pathname);
+    if (requiredRole && profile.role !== requiredRole) {
+      if (request.nextUrl.pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Role akun tidak diizinkan mengakses endpoint ini." },
+          { status: 403 },
+        );
+      }
+      const homeByRole: Record<
+        Database["public"]["Enums"]["user_role"],
+        string
+      > = {
+        operator: "/operator",
+        panitia: "/panitia",
+        juri: "/juri",
+        peserta: "/dashboard",
+      };
+      const landingUrl = request.nextUrl.clone();
+      landingUrl.pathname = homeByRole[profile.role];
+      landingUrl.search = "";
+      return NextResponse.redirect(landingUrl);
+    }
+  }
+
   if (user && request.nextUrl.pathname === "/login") {
-    const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/dashboard";
-    dashboardUrl.search = "";
-    return NextResponse.redirect(dashboardUrl);
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("is_active")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profileError) {
+      console.error("Gagal memvalidasi status akun.", profileError.message);
+      return new NextResponse("Status akun gagal diverifikasi.", {
+        status: 503,
+      });
+    }
+    if (profile?.is_active) {
+      const dashboardUrl = request.nextUrl.clone();
+      dashboardUrl.pathname = "/dashboard";
+      dashboardUrl.search = "";
+      return NextResponse.redirect(dashboardUrl);
+    }
   }
 
   return response;

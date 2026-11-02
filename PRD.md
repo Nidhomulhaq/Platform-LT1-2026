@@ -18,10 +18,18 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
 
 | Peran | ENUM Role | Deskripsi Hak Akses & Tanggung Jawab | 
 | ----- | ----- | ----- | 
-| **Operator Pusat** | `operator` | Super Admin. Mengelola data master (lomba, pos, akun, regu, data sekolah/pangkalan & penandatangan), memetakan akun individu ke regu, melakukan peninjauan & pengesahan nilai juri (*Approve/Revision*), merilis papan skor, serta mempublikasikan sertifikat. | 
-| **Panitia** | `panitia` | Petugas Pos/Acara. Mengelola jalannya pos/kegiatan, memberikan instruksi tugas, memverifikasi kehadiran regu di pos, dan memantau status pengiriman tugas. | 
-| **Juri** | `juri` | Penilai. Menginput nilai regu berdasarkan rubrik penugasan pos, menyimpan *draft* nilai, dan mengirimkan nilai ke Operator Pusat untuk diverifikasi. | 
-| **Peserta** | `peserta` | Peserta Lomba (Anggota/Pinru). Mengerjakan tugas (CBT / Unggah Media), melihat status pengerjaan, mengoleksi lencana digital (*badge*) per mata lomba, serta mengunduh sertifikat berformat gambar. | 
+| **Operator Pusat** | `operator` | Mengelola akun (membuat dan menonaktifkan akun, menetapkan role, memetakan anggota ke regu, dan memulai reset kata sandi melalui alur aman), data pangkalan dan regu, mata lomba, isi instruksi, serta penugasan Panitia dan Juri. Meninjau nilai dengan menyetujui atau meminta revisi, menerbitkan leaderboard, dan mempublikasikan sertifikat. Pengelolaan akun harus menggunakan backend tepercaya; secret key Supabase tidak boleh dikirim ke peramban. |
+| **Panitia** | `panitia` | Pada pos/mata lomba yang ditugaskan, membuka atau menyampaikan instruksi yang disiapkan Operator, mencatat kehadiran, dan memantau status pengumpulan tugas. |
+| **Juri** | `juri` | Pada mata lomba yang ditugaskan, menilai regu berdasarkan rubrik, menyimpan draf, memberi catatan, dan mengirim nilai kepada Operator untuk ditinjau. Juri dapat memperbarui nilai sampai disetujui; perubahan yang dikirim kembali berstatus menunggu tinjauan. |
+| **Peserta** | `peserta` | Melihat tugas dan progres regu, mengoleksi lencana, melihat nilai regu setelah disetujui, serta mengakses sertifikat setelah diterbitkan. Leaderboard hanya terlihat setelah dirilis Operator. Hanya Pinru yang dapat mengirim atau memperbarui tugas atas nama regu; anggota lain hanya melihat status. |
+
+### Aturan Otorisasi yang Berlaku
+
+* Penugasan membatasi akses Panitia ke pos/mata lomba dan akses Juri ke mata lomba yang ditugaskan. Operator mengelola penugasan tersebut.
+* Panitia tidak dapat mengubah isi instruksi, mengelola akun atau data master, menginput nilai, maupun mengesahkan nilai.
+* Juri tidak dapat mengesahkan nilai atau menerbitkan leaderboard/sertifikat. Setelah Operator menyetujui nilai, nilai terkunci bagi Juri.
+* Nilai berstatus `approved` dapat dilihat anggota regu sebelum leaderboard dipublikasikan. Publikasi leaderboard dan sertifikat tetap merupakan kontrol terpisah milik Operator.
+* Hak akses wajib ditegakkan pada backend dan kebijakan Row Level Security (RLS), bukan hanya dengan menyembunyikan navigasi atau tombol di UI.
 
 ## 3. Arsitektur & Spesifikasi Teknologi (Tech Stack Rp 0)
 
@@ -47,7 +55,7 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
 
 ```
                   +-----------------------------------+
-                  |   Peserta Registrasi Akun Mandiri |
+                  | Operator Buat Akun & Tetapkan Role |
                   +-----------------+-----------------+
                                     |
                                     v
@@ -58,12 +66,16 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
                                     |
                                     v
                   +-----------------------------------+
-                  | Panitia Rilis Tugas / Pos Giat    |
+                  | Operator Siapkan Instruksi Tugas  |
+                  +-----------------+-----------------+
+                                    |
+                                    v
+                  | Panitia Rilis pada Penugasan      |
                   +-----------------+-----------------+
                                     |
                                     v
                   +-----------------------------------+
-                  | Peserta Submit Tugas (CBT/Upload) |
+                  | Pinru Kirim Tugas (CBT/Upload)       |
                   +-----------------+-----------------+
                                     |
                                     v
@@ -82,8 +94,8 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
   [ Operator Approve ]                            [ Operator Revision ]
             |                                               |
             v                                               v
- Status: Approved (Locked)                       Status: Draft / Revision
-  (Masuk Rekap & Leaderboard)                      (Dikembalikan ke Juri)
+ Status: Approved (Locked)                       Status: Revision Needed
+  (Nilai Regu Terlihat)                            (Juri Perbarui & Kirim Ulang)
             |
             v
  +------------------------------------------------------------+
@@ -93,9 +105,37 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
 
 ```
 
-## 5. Skrip DDL Basis Data PostgreSQL (Supabase Migration Ready)
+## 5. Persyaratan Skema & Otorisasi Basis Data
 
-Salin skrip SQL berikut langsung ke **Supabase SQL Editor**:
+Migration dalam folder [`supabase/migrations`](./supabase/migrations) adalah sumber skema yang dapat dieksekusi dan lebih otoritatif daripada contoh DDL lama di bawah. **Jangan menyalin atau menjalankan DDL lama ini**; setiap perubahan skema harus dibuat sebagai migration baru.
+
+Skema dan kebijakan akses wajib mendukung hal-hal berikut:
+
+* Penugasan Panitia per pos/mata lomba yang dikelola Operator. Panitia hanya boleh merilis instruksi, mencatat kehadiran, dan melihat pengumpulan pada penugasan tersebut.
+* Penugasan Juri per mata lomba yang dikelola Operator. Juri hanya boleh membaca, membuat, dan memperbarui nilai untuk mata lomba yang ditugaskan.
+* Otorisasi pengiriman tugas per regu yang memastikan hanya anggota dengan `is_pinru = true` yang dapat membuat atau memperbarui kiriman. Anggota regu lain tetap dapat membaca statusnya.
+* Juri dapat menyimpan/mengirim nilai sesuai status `draft`, `pending_review`, atau `revision_needed`; setelah `approved`, hanya Operator yang dapat mengubah nilai atau status.
+* Anggota regu dapat membaca nilai `approved` regunya tanpa publikasi leaderboard. Akses publik dan sertifikat tetap mengikuti kontrol publikasi tersendiri.
+* Pembuatan, penonaktifan, dan perubahan role akun hanya dilakukan Operator melalui backend tepercaya dengan secret Supabase privat. Secret/service-role key tidak boleh diekspos di kode klien atau variabel `NEXT_PUBLIC_*`.
+* Pengujian RLS harus mencakup akses yang diizinkan dan ditolak untuk setiap role, termasuk akses lintas penugasan, lintas regu, perubahan role sendiri, submit non-Pinru, dan perubahan nilai setelah persetujuan.
+
+### Status Penerapan Hak Akses
+
+Implementasi aplikasi dan migration
+[`20261102014824_enforce_role_permissions.sql`](./supabase/migrations/20261102014824_enforce_role_permissions.sql)
+telah menambahkan penugasan Panitia, pemeriksaan akun aktif, pembatasan operasi Panitia/Juri,
+pengiriman tugas khusus Pinru, alur perubahan nilai Juri sebelum persetujuan, serta visibilitas
+nilai yang disetujui untuk regu. Manajemen akun Operator berjalan melalui endpoint server dan
+membutuhkan secret Supabase privat pada environment server.
+
+Migration baru ini **belum diterapkan atau diuji pada database dalam sesi implementasi** karena
+database Supabase lokal/staging tidak tersedia. Sebelum dipakai pada kegiatan sungguhan, jalankan
+migration setelah migration sebelumnya dan uji akses RLS positif/negatif untuk setiap role,
+termasuk akses lintas penugasan, lintas regu, submit non-Pinru, penonaktifan akun, serta perubahan
+nilai setelah persetujuan. Sampai validasi tersebut selesai, jangan menganggap aturan database
+sudah aktif pada proyek Supabase.
+
+### DDL Versi Lama (Referensi Non-Eksekusi)
 
 ```
 -- 1. EXTENSIONS
@@ -240,25 +280,43 @@ CREATE POLICY "Users Can Update Own Profile" ON public.profiles FOR UPDATE USING
 
 * **Section 1 - Lemari Lencana (Badge Showcase)**: Grid ikon lencana. Lencana yang sudah diraih berwarna terang dengan batas skor; yang belum diraih berwarna abu-abu (*grayscale*).
 
-* **Section 2 - Daftar Mata Lomba & Status**: Tabel/Kartu status pengerjaan tugas (`Belum Dikerjakan`, `Menunggu Penilaian`, `Selesai`).
+* **Section 2 - Daftar Mata Lomba & Status**: Tabel/Kartu status pengerjaan tugas (`Belum Dikerjakan`, `Menunggu Penilaian`, `Selesai`). Nilai regu ditampilkan setelah disetujui; leaderboard mengikuti publikasi Operator.
+
+* **Hak kirim tugas**: Pinru dapat mengirim dan memperbarui tugas regu. Anggota regu lain hanya dapat melihat tugas dan statusnya.
 
 * **Section 3 - Tombol Unduh Sertifikat**: Aktif jika seluruh mata lomba telah berstatus `approved` oleh Operator.
 
 ### B. Dashboard Juri (`/juri`)
 
-* **Filter Pos/Mata Lomba**: Dropdown daftar mata lomba yang diampu.
+* **Filter Pos/Mata Lomba**: Hanya menampilkan mata lomba yang ditugaskan kepada Juri.
 
 * **Tabel Input Nilai**: List Regu Peserta + Form Input Nilai (0-100) + Catatan Evaluasi.
 
 * **Aksi**: Tombol `Simpan Draft` dan `Kirim ke Operator`.
 
-### C. Dashboard Operator Pusat (`/operator`)
+* **Perubahan nilai**: Juri dapat memperbarui nilai selama belum disetujui. Nilai yang dikirim ulang masuk kembali ke `Pending Review`; nilai `Approved` terkunci bagi Juri.
+
+### C. Dashboard Panitia (`/panitia`)
+
+* **Cakupan penugasan**: Hanya menampilkan pos/mata lomba yang ditugaskan kepada Panitia.
+
+* **Instruksi**: Panitia dapat membuka atau menyampaikan instruksi yang disiapkan Operator, tetapi tidak dapat mengubah isinya.
+
+* **Operasional**: Mencatat kehadiran regu pada penugasan dan memantau status pengumpulan tugas. Panitia tidak memiliki aksi pengelolaan akun, data master, atau nilai.
+
+### D. Dashboard Operator Pusat (`/operator`)
 
 * **Statistik Cepat**: Total Peserta, Total Regu, Total Lomba, Status Verifikasi Nilai.
 
+* **Manajemen Akun**: Membuat/menonaktifkan akun, menetapkan role, memetakan anggota ke regu, dan memulai reset kata sandi melalui alur backend yang aman.
+
 * **Manajemen Pangkalan/Sekolah (`/operator/schools`)**: Pengaturan data MI Ma'arif NU Islamiyah & MTs Ma'arif 28 Islamiyah beserta nama Kepala Madrasah dan Pembina untuk tanda tangan sertifikat.
 
-* **Manajemen Regu**: Fitur *Multi-Select Checkbox* untuk mengelompokkan akun individu ke dalam regu dan pangkalan.
+* **Manajemen Regu**: Fitur *Multi-Select Checkbox* untuk mengelompokkan akun individu ke dalam regu dan pangkalan, serta menetapkan Pinru untuk setiap regu.
+
+* **Manajemen Penugasan**: Menetapkan Panitia pada pos/mata lomba dan Juri pada mata lomba. Perubahan penugasan segera membatasi data yang terlihat dan aksi yang dapat dilakukan.
+
+* **Manajemen Lomba & Instruksi**: Operator mengelola mata lomba dan isi instruksi tugas; Panitia hanya merilis/menyampaikan instruksi yang telah disiapkan.
 
 * **Peninjauan Nilai (Review Pipeline)**:
 
@@ -268,7 +326,7 @@ CREATE POLICY "Users Can Update Own Profile" ON public.profiles FOR UPDATE USING
 
 * **Papan Skor & Sertifikat**: Switch ON/OFF untuk rilis *Leaderboard* publik & *Batch Certificate Access*.
 
-### D. Halaman Publik Verifikasi Tanda Tangan Digital (`/verify/[userId]`)
+### E. Halaman Publik Verifikasi Tanda Tangan Digital (`/verify/[userId]`)
 
 * **Akses**: Terbuka umum ketika siapapun memindai (*scan*) QR Code tanda tangan digital pada sertifikat.
 
@@ -332,18 +390,23 @@ Instruksi untuk AI Coding Agent (Cursor / v0 / Claude Dev / Windsurf):
 [Langkah 1: Setup Proyek & Database]
 1. Inisialisasi Next.js 14+ (App Router) dengan Tailwind CSS dan Shadcn UI.
 2. Hubungkan ke Supabase menggunakan @supabase/ssr package.
-3. Eksekusi skrip SQL dari Bagian 5 PRD ini pada Supabase SQL Editor (membuat tabel schools, profiles, teams, scores, dll).
+3. Terapkan migration dalam `supabase/migrations` sesuai urutan; jangan menjalankan DDL lama yang disertakan sebagai referensi di Bagian 5.
 
-[Langkah 2: Autentikasi & Manajemen Master Data]
-1. Buat halaman Login & Register (/login, /register).
-2. Terapkan Middleware Next.js untuk proteksi rute berbasis role (operator, juri, panitia, peserta).
-3. Buat CRUD Master Sekolah/Pangkalan (/operator/schools) untuk mengisi data MI Ma'arif NU Islamiyah & MTs Ma'arif 28 Islamiyah (termasuk nama Kepala Madrasah & Pembina).
-4. Buat modul Operator (/operator/teams) untuk memetakan user & regu ke pangkalan sekolah.
+[Langkah 2: Autentikasi, Akun & Manajemen Master Data]
+1. Buat halaman Login. Pendaftaran mandiri tidak tersedia; Operator membuat dan mengelola akun melalui backend tepercaya.
+2. Terapkan proteksi rute dan otorisasi server/database berbasis role (operator, juri, panitia, peserta); middleware/UI bukan satu-satunya lapisan keamanan.
+3. Buat manajemen akun Operator untuk membuat/menonaktifkan akun, menetapkan role, dan memulai reset kata sandi secara aman, tanpa mengekspos secret key Supabase.
+4. Buat CRUD Master Sekolah/Pangkalan (/operator/schools) untuk mengisi data MI Ma'arif NU Islamiyah & MTs Ma'arif 28 Islamiyah (termasuk nama Kepala Madrasah & Pembina).
+5. Buat modul Operator (/operator/teams) untuk memetakan user dan Pinru ke regu serta pangkalan sekolah.
+6. Buat manajemen penugasan Panitia per pos/mata lomba dan Juri per mata lomba; tegakkan cakupan penugasan pada kebijakan RLS.
 
 [Langkah 3: Modul Penugasan & Penilaian]
-1. Buat UI Submit Tugas Peserta (/dashboard/submit/[competitionId]).
-2. Buat UI Input Nilai Juri (/juri/scoring).
-3. Buat UI Verifikasi Operator (/operator/scores) dengan tombol Approve dan Request Revision.
+1. Batasi submit/update tugas regu (/dashboard/submit/[competitionId]) untuk Pinru; anggota lain hanya dapat membaca status.
+2. Buat UI Panitia untuk membuka instruksi Operator, mencatat kehadiran, dan memantau pengumpulan hanya pada penugasan yang dimiliki.
+3. Buat UI Input Nilai Juri (/juri/scoring) yang hanya menampilkan penugasan Juri tersebut.
+4. Izinkan Juri memperbarui nilai sebelum disetujui; pengiriman ulang masuk `pending_review`; nilai `approved` terkunci untuk Juri.
+5. Buat UI Verifikasi Operator (/operator/scores) dengan tombol Approve dan Request Revision. Nilai `approved` dapat dibaca anggota regu tanpa menunggu publikasi leaderboard.
+6. Tambahkan pengujian RLS positif dan negatif untuk seluruh role, batas penugasan, Pinru, dan perubahan nilai pascapersetujuan.
 
 [Langkah 4: Dynamic Certificate, Digital Signature QR & Verification Route]
 1. Buat Halaman Publik Verifikasi Sertifikat (/verify/[userId]) untuk menampilkan keabsahan sertifikat saat QR Code di-scan.
