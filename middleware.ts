@@ -122,10 +122,10 @@ export async function middleware(request: NextRequest) {
         string
       > = {
         operator: "/operator",
-        panitia: "/panitia",
-        juri: "/juri",
+        panitia: "/panitia/dashboard",
+        juri: "/juri/dashboard",
         peserta: "/dashboard",
-        pendamping_regu: "/pendamping",
+        pendamping_regu: "/pendamping/dashboard",
       };
       const landingUrl = request.nextUrl.clone();
       landingUrl.pathname = homeByRole[profile.role];
@@ -150,10 +150,10 @@ export async function middleware(request: NextRequest) {
       const dashboardUrl = request.nextUrl.clone();
       dashboardUrl.pathname = {
         operator: "/operator",
-        panitia: "/panitia",
-        juri: "/juri",
+        panitia: "/panitia/dashboard",
+        juri: "/juri/dashboard",
         peserta: "/dashboard",
-        pendamping_regu: "/pendamping",
+        pendamping_regu: "/pendamping/dashboard",
       }[profile.role];
       dashboardUrl.search = "";
       return NextResponse.redirect(dashboardUrl);

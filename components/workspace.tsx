@@ -77,6 +77,9 @@ type View =
   | "judgeAssignments"
   | "panitiaAssignments"
   | "publication"
+  | "juriDashboard"
+  | "panitiaDashboard"
+  | "pendampingDashboard"
   | "juri"
   | "panitia"
   | "pendamping"
@@ -101,6 +104,9 @@ const viewTitles: Record<View, string> = {
   judgeAssignments: "Penugasan juri",
   panitiaAssignments: "Penugasan panitia",
   publication: "Papan skor & sertifikat",
+  juriDashboard: "Dasbor juri",
+  panitiaDashboard: "Dasbor panitia",
+  pendampingDashboard: "Dasbor pendamping",
   juri: "Input nilai juri",
   panitia: "Kegiatan & kehadiran",
   pendamping: "Pendaftaran peserta",
@@ -269,6 +275,147 @@ const participantNavigation: {
   { view: "profile", label: "Profil", href: "/profile" },
 ];
 
+type WorkspaceNavigationItem = {
+  view: View;
+  label: string;
+  href: string;
+  count?: number;
+};
+
+function dashboardViewForRole(role: Role): View {
+  switch (role) {
+    case "operator":
+      return "operator";
+    case "juri":
+      return "juriDashboard";
+    case "panitia":
+      return "panitiaDashboard";
+    case "pendamping_regu":
+      return "pendampingDashboard";
+    case "peserta":
+      return "participant";
+  }
+}
+
+function workspaceNavigation(
+  role: Role,
+  data: ReturnType<typeof useWorkspace>["data"],
+): WorkspaceNavigationItem[] {
+  if (role === "peserta") {
+    return participantNavigation.map((item) => ({
+      ...item,
+      label: item.view === "participant" ? "Dasbor" : item.label,
+    }));
+  }
+
+  if (role === "operator") {
+    return [
+      { view: "operator", label: "Dasbor", href: "/operator" },
+      { view: "accounts", label: "Manajemen akun", href: "/operator/accounts" },
+      {
+        view: "scores",
+        label: "Peninjauan nilai",
+        href: "/operator/scores",
+        count: data.scores.filter((score) => score.status === "pending_review")
+          .length,
+      },
+      { view: "teams", label: "Regu & peserta", href: "/operator/teams" },
+      { view: "schools", label: "Pangkalan", href: "/operator/schools" },
+      { view: "competitions", label: "Mata lomba", href: "/operator/competitions" },
+      {
+        view: "judgeAssignments",
+        label: "Penugasan juri",
+        href: "/operator/judge-assignments",
+      },
+      {
+        view: "panitiaAssignments",
+        label: "Penugasan panitia",
+        href: "/operator/panitia-assignments",
+      },
+      { view: "publication", label: "Publikasi", href: "/operator/publication" },
+    ];
+  }
+
+  const dashboardItem: WorkspaceNavigationItem = {
+    view: dashboardViewForRole(role),
+    label: "Dasbor",
+    href:
+      role === "juri"
+        ? "/juri/dashboard"
+        : role === "panitia"
+          ? "/panitia/dashboard"
+          : "/pendamping/dashboard",
+  };
+
+  if (role === "juri") {
+    return [
+      dashboardItem,
+      { view: "juri", label: "Input nilai", href: "/juri" },
+    ];
+  }
+  if (role === "panitia") {
+    return [
+      dashboardItem,
+      { view: "panitia", label: "Pos kegiatan", href: "/panitia" },
+    ];
+  }
+  return [
+    dashboardItem,
+    {
+      view: "pendamping",
+      label: "Pendaftaran peserta",
+      href: "/pendamping",
+    },
+  ];
+}
+
+const workspaceMenuDescriptions: Partial<Record<View, string>> = {
+  leaderboard: "Lihat peringkat regu yang sudah dipublikasikan.",
+  scan: "Pindai kode QR untuk membuka tugas kegiatan.",
+  teamScores: "Pantau hasil penilaian dan progres regu.",
+  profile: "Periksa informasi akun dan data peserta.",
+  accounts: "Kelola akun peserta dan petugas kegiatan.",
+  scores: "Tinjau dan tindak lanjuti nilai yang masuk.",
+  teams: "Atur regu, peserta, dan pembagian anggota.",
+  schools: "Kelola pangkalan yang mengikuti kegiatan.",
+  competitions: "Atur mata lomba dan kriteria penilaian.",
+  judgeAssignments: "Tentukan juri untuk setiap mata lomba.",
+  panitiaAssignments: "Atur penugasan panitia di setiap pos.",
+  publication: "Kelola publikasi papan skor dan sertifikat.",
+  juri: "Masukkan nilai untuk regu pada mata lomba yang ditugaskan.",
+  panitia: "Pantau kegiatan dan catat kehadiran regu.",
+  pendamping: "Daftarkan peserta dan kelola data regu dampingan.",
+};
+
+function WorkspaceMenu({ role }: { role: Role }) {
+  const { data } = useWorkspace();
+  const items = workspaceNavigation(role, data).filter(
+    (item) => item.view !== dashboardViewForRole(role),
+  );
+
+  return (
+    <section className="workspace-menu" aria-label="Menu ruang kerja">
+      <SectionHeading
+        title="Menu ruang kerja"
+        detail="Pilih menu untuk melanjutkan pekerjaan."
+      />
+      <div className="workspace-menu-grid">
+        {items.map((item) => (
+          <Link className="workspace-menu-item" href={item.href} key={item.href}>
+            <IconForView view={item.view} />
+            <span className="workspace-menu-copy">
+              <strong>{item.label}</strong>
+              <span>{workspaceMenuDescriptions[item.view]}</span>
+            </span>
+            {item.count ? <span className="nav-count">{item.count}</span> : null}
+            <ArrowRight className="workspace-menu-arrow" aria-hidden="true" />
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function WorkspaceFrame({
   view,
   children,
@@ -280,6 +427,14 @@ function WorkspaceFrame({
   const router = useRouter();
   const { data, isConnected, profile, signOut } = useWorkspace();
   const [menuOpen, setMenuOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [menuOpen]);
   const routeRole: Role =
     view === "operator" ||
     view === "accounts" ||
@@ -291,83 +446,46 @@ function WorkspaceFrame({
     view === "panitiaAssignments" ||
     view === "publication"
       ? "operator"
-      : view === "juri"
+      : view === "juri" || view === "juriDashboard"
         ? "juri"
-        : view === "panitia"
+        : view === "panitia" || view === "panitiaDashboard"
           ? "panitia"
-          : view === "pendamping"
+          : view === "pendamping" || view === "pendampingDashboard"
             ? "pendamping_regu"
-          : "peserta";
+            : "peserta";
   const role: Role = isConnected ? profile?.role ?? "peserta" : routeRole;
 
   const roleOptions: { value: Role; label: string; path: string }[] = [
     { value: "peserta", label: "Peserta", path: "/dashboard" },
-    { value: "juri", label: "Juri", path: "/juri" },
-    { value: "panitia", label: "Panitia", path: "/panitia" },
-    { value: "pendamping_regu", label: "Pendamping regu", path: "/pendamping" },
+    { value: "juri", label: "Juri", path: "/juri/dashboard" },
+    { value: "panitia", label: "Panitia", path: "/panitia/dashboard" },
+    {
+      value: "pendamping_regu",
+      label: "Pendamping regu",
+      path: "/pendamping/dashboard",
+    },
     { value: "operator", label: "Operator pusat", path: "/operator" },
   ];
 
-  const nav: { view: View; label: string; href: string; count?: number }[] =
-    role === "operator"
-      ? [
-          { view: "operator", label: "Ringkasan", href: "/operator" },
-          {
-            view: "accounts",
-            label: "Manajemen akun",
-            href: "/operator/accounts",
-          },
-          {
-            view: "scores",
-            label: "Peninjauan nilai",
-            href: "/operator/scores",
-            count: data.scores.filter((score) => score.status === "pending_review")
-              .length,
-          },
-          { view: "teams", label: "Regu & peserta", href: "/operator/teams" },
-          { view: "schools", label: "Pangkalan", href: "/operator/schools" },
-          {
-            view: "competitions",
-            label: "Mata lomba",
-            href: "/operator/competitions",
-          },
-          {
-            view: "judgeAssignments",
-            label: "Penugasan juri",
-            href: "/operator/judge-assignments",
-          },
-          {
-            view: "panitiaAssignments",
-            label: "Penugasan panitia",
-            href: "/operator/panitia-assignments",
-          },
-          {
-            view: "publication",
-            label: "Publikasi",
-            href: "/operator/publication",
-          },
-        ]
-      : role === "juri"
-        ? [{ view: "juri", label: "Input nilai", href: "/juri" }]
-        : role === "panitia"
-          ? [{ view: "panitia", label: "Pos kegiatan", href: "/panitia" }]
-          : role === "pendamping_regu"
-            ? [{ view: "pendamping", label: "Pendaftaran peserta", href: "/pendamping" }]
-            : [];
+  const nav = workspaceNavigation(role, data);
   const isParticipant = role === "peserta";
 
   return (
-    <div className={`workspace${isParticipant ? " participant-workspace" : ""}`}>
-      {!isParticipant ? (
-        <>
-        {menuOpen ? (
-          <button
-            className="mobile-overlay"
-            aria-label="Tutup menu"
-            onClick={() => setMenuOpen(false)}
-          />
-        ) : null}
-        <aside className={`sidebar${menuOpen ? " is-open" : ""}`}>
+    <div
+      className={`workspace${isParticipant ? " participant-workspace" : ""}${menuOpen ? " has-open-sidebar" : ""}`}
+    >
+      {menuOpen ? (
+        <button
+          className="mobile-overlay"
+          aria-label="Tutup menu"
+          onClick={() => setMenuOpen(false)}
+        />
+      ) : null}
+      <aside
+        className={`sidebar${menuOpen ? " is-open" : ""}`}
+        id="workspace-sidebar"
+        aria-label="Ruang kerja"
+      >
           <div className="mobile-sidebar-head">
             <Logo />
             <button
@@ -377,9 +495,6 @@ function WorkspaceFrame({
             >
               <X aria-hidden="true" />
             </button>
-          </div>
-          <div className="sidebar-brand">
-            <Logo />
           </div>
           <div className="workspace-switcher">
             <span className="workspace-switcher-mark">
@@ -432,24 +547,25 @@ function WorkspaceFrame({
               <ChevronDown aria-hidden="true" />
             </div>
           </div>
-          <button
-            className="mobile-menu-button"
-            aria-label="Buka menu navigasi"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(true)}
-          >
-            <Menu aria-hidden="true" />
-          </button>
-        </aside>
-        </>
-      ) : null}
+      </aside>
 
       <main className={`main-shell${isParticipant ? " participant-main-shell" : ""}`}>
         <div className="topbar">
-          <div className="breadcrumbs">
-            <span>LT-1 Islamiyah</span>
-            <ChevronRight aria-hidden="true" />
-            <strong>{viewTitles[view]}</strong>
+          <div className="topbar-leading">
+            <button
+              className="icon-button sidebar-toggle"
+              aria-label="Buka menu navigasi"
+              aria-expanded={menuOpen}
+              aria-controls="workspace-sidebar"
+              onClick={() => setMenuOpen(true)}
+            >
+              <Menu aria-hidden="true" />
+            </button>
+            <div className="breadcrumbs">
+              <span>LT-1 Islamiyah</span>
+              <ChevronRight aria-hidden="true" />
+              <strong>{viewTitles[view]}</strong>
+            </div>
           </div>
           <div className="topbar-actions">
             <span className="demo-tag">
@@ -754,6 +870,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
         title={`Selamat pagi, ${participant?.name?.split(" ")[0] ?? "Peserta"}`}
         description={`Ringkasan tugas, nilai, dan pencapaian Regu ${team?.name ?? "Anda"}.`}
       />
+      <WorkspaceMenu role="peserta" />
       <section className="scout-banner" aria-labelledby="team-greeting">
         <div className="banner-copy">
           <p className="banner-kicker">LOMBA TINGKAT 1 · 2026</p>
@@ -1731,6 +1848,7 @@ function OperatorDashboard() {
           </div>
         ))}
       </div>
+      <WorkspaceMenu role="operator" />
       <div className="content-grid">
         <section className="panel panel-pad">
           <SectionHeading
@@ -1831,6 +1949,37 @@ function OperatorDashboard() {
           </section>
         </div>
       </div>
+    </>
+  );
+}
+
+function RoleWorkspaceDashboard({
+  role,
+}: {
+  role: "juri" | "panitia" | "pendamping_regu";
+}) {
+  const dashboardCopy = {
+    juri: {
+      title: "Dasbor juri",
+      description: "Buka penugasan dan lanjutkan penilaian mata lomba.",
+    },
+    panitia: {
+      title: "Dasbor panitia",
+      description: "Akses pos kegiatan dan pencatatan kehadiran regu.",
+    },
+    pendamping_regu: {
+      title: "Dasbor pendamping regu",
+      description: "Kelola pendaftaran peserta dan data regu dampingan.",
+    },
+  }[role];
+
+  return (
+    <>
+      <PageHeading
+        title={dashboardCopy.title}
+        description={dashboardCopy.description}
+      />
+      <WorkspaceMenu role={role} />
     </>
   );
 }
@@ -6082,11 +6231,11 @@ function EventCoordination({ notify }: { notify: Notify }) {
         view === "panitiaAssignments" ||
         view === "publication"
           ? "operator"
-          : view === "juri"
+          : view === "juri" || view === "juriDashboard"
             ? "juri"
-            : view === "panitia"
+            : view === "panitia" || view === "panitiaDashboard"
               ? "panitia"
-              : view === "pendamping"
+              : view === "pendamping" || view === "pendampingDashboard"
                 ? "pendamping_regu"
                 : ["participant", "leaderboard", "scan", "teamScores", "profile", "submit"].includes(
                     view,
@@ -6095,10 +6244,10 @@ function EventCoordination({ notify }: { notify: Notify }) {
                 : null;
       const roleLanding: Record<Role, string> = {
         peserta: "/dashboard",
-        juri: "/juri",
-        panitia: "/panitia",
+        juri: "/juri/dashboard",
+        panitia: "/panitia/dashboard",
         operator: "/operator",
-        pendamping_regu: "/pendamping",
+        pendamping_regu: "/pendamping/dashboard",
       };
 
       React.useEffect(() => {
@@ -6233,6 +6382,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
           break;
         case "publication":
           content = <PublicationSettings notify={notify} />;
+          break;
+        case "juriDashboard":
+          content = <RoleWorkspaceDashboard role="juri" />;
+          break;
+        case "panitiaDashboard":
+          content = <RoleWorkspaceDashboard role="panitia" />;
+          break;
+        case "pendampingDashboard":
+          content = <RoleWorkspaceDashboard role="pendamping_regu" />;
           break;
         case "juri":
           content = <JuryScoring notify={notify} />;
