@@ -548,11 +548,11 @@ async function loadSupabaseWorkspace(
     settingsResult,
   ] = await Promise.all([
     userId
-      ? supabase
-          .from("profiles")
+    ? supabase
+        .from("profiles")
         .select("id, full_name, role, school_id, is_active")
-          .eq("id", userId)
-          .maybeSingle()
+        .eq("id", userId)
+        .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     supabase.from("schools").select("*").order("name"),
     supabase.from("teams").select("*").order("name"),

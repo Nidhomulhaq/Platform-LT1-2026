@@ -325,11 +325,27 @@ textarea:focus-visible {
 }
 
 .account-row {
+  position: relative;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.account-trigger {
   display: flex;
+  width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 10px;
-  padding: 13px 7px 2px;
-  border-top: 1px solid var(--border);
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.account-trigger:hover,
+.account-trigger[aria-expanded="true"] {
+  background: var(--active);
 }
 
 .avatar {
@@ -369,8 +385,49 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
-.account-row > svg {
+.account-trigger > svg {
   width: 17px;
+  flex: none;
+  color: var(--muted);
+}
+
+.account-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 45;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.account-menu a,
+.account-menu button {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.account-menu a:hover,
+.account-menu button:hover {
+  background: var(--active);
+}
+
+.account-menu svg {
+  width: 17px;
+  height: 17px;
   color: var(--muted);
 }
 
@@ -730,6 +787,40 @@ textarea:focus-visible {
 
 .participant-profile-card {
   width: min(100%, 760px);
+}
+
+.account-profile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+  align-items: start;
+  gap: var(--gap);
+}
+
+.account-profile-card,
+.account-password-card {
+  min-width: 0;
+}
+
+.account-profile-form {
+  margin-top: 20px;
+}
+
+.account-profile-form .form-footer {
+  align-items: flex-end;
+}
+
+.form-error,
+.form-success {
+  margin: 0;
+  font-size: 13px;
+}
+
+.form-error {
+  color: var(--negative-ink);
+}
+
+.form-success {
+  color: var(--positive-ink);
 }
 
 .participant-profile-heading {
@@ -2617,6 +2708,10 @@ textarea:focus-visible {
     padding: 0 20px 36px;
   }
 
+  .account-profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .participant-main-shell {
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
@@ -2654,6 +2749,15 @@ textarea:focus-visible {
 
   .auth-page {
     grid-template-columns: 1fr;
+  }
+
+  .account-profile-form .form-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .account-profile-form .form-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .auth-story {

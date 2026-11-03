@@ -13,7 +13,6 @@ const roleRoutes: { prefix: string; role: Database["public"]["Enums"]["user_role
   { prefix: "/leaderboard", role: "peserta" },
   { prefix: "/scan-task", role: "peserta" },
   { prefix: "/score-recap", role: "peserta" },
-  { prefix: "/profile", role: "peserta" },
 ];
 
 function isPublicPath(pathname: string) {

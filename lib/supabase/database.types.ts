@@ -62,6 +62,9 @@ export type Database = {
         is_active: boolean;
         school_id: string | null;
         phone_number: string | null;
+        place_of_birth: string;
+        date_of_birth: string | null;
+        motto: string;
         avatar_url: string | null;
         created_at: string;
         updated_at: string;

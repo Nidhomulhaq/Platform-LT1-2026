@@ -27,6 +27,7 @@ import {
   Landmark,
   LockKeyhole,
   LogIn,
+  LogOut,
   Menu,
   Medal,
   MessageSquareText,
@@ -93,7 +94,7 @@ const viewTitles: Record<View, string> = {
   leaderboard: "Leaderboard",
   scan: "Scan tugas",
   teamScores: "Rekap nilai regu",
-  profile: "Profil peserta",
+  profile: "Profil akun",
   submit: "Pengumpulan tugas",
   operator: "Ringkasan operator",
   accounts: "Manajemen akun",
@@ -419,22 +420,28 @@ function WorkspaceMenu({ role }: { role: Role }) {
 function WorkspaceFrame({
   view,
   children,
+  notify,
 }: {
   view: View;
   children: React.ReactNode;
+  notify: Notify;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data, isConnected, profile, signOut } = useWorkspace();
+  const { data, isConnected, profile, session, signOut } = useWorkspace();
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
   React.useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !accountMenuOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        setAccountMenuOpen(false);
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [menuOpen]);
+  }, [accountMenuOpen, menuOpen]);
   const routeRole: Role =
     view === "operator" ||
     view === "accounts" ||
@@ -469,6 +476,30 @@ function WorkspaceFrame({
 
   const nav = workspaceNavigation(role, data);
   const isParticipant = role === "peserta";
+  const accountName =
+    profile?.full_name ||
+    session?.user.email?.split("@")[0] ||
+    "Akun pratinjau";
+  const accountInitials = accountName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .toUpperCase();
+  const roleLabel = roleOptions.find((option) => option.value === role)?.label;
+  const handleSignOut = async () => {
+    if (!isConnected) {
+      router.replace("/login");
+      return;
+    }
+    try {
+      await signOut();
+      router.replace("/login");
+    } catch (error) {
+      console.error("Gagal keluar dari sesi Supabase.", error);
+      notify("Tidak dapat mengakhiri sesi. Coba lagi.", true);
+    }
+  };
 
   return (
     <div
@@ -478,7 +509,10 @@ function WorkspaceFrame({
         <button
           className="mobile-overlay"
           aria-label="Tutup menu"
-          onClick={() => setMenuOpen(false)}
+          onClick={() => {
+            setMenuOpen(false);
+            setAccountMenuOpen(false);
+          }}
         />
       ) : null}
       <aside
@@ -539,12 +573,37 @@ function WorkspaceFrame({
               </p>
             </div>
             <div className="account-row">
-              <span className="avatar">AF</span>
-              <span className="account-copy">
-                <strong>Ahmad Fauzan</strong>
-                <span>{roleOptions.find((option) => option.value === role)?.label}</span>
-              </span>
-              <ChevronDown aria-hidden="true" />
+              <button
+                className="account-trigger"
+                aria-expanded={accountMenuOpen}
+                aria-controls="account-menu"
+                onClick={() => setAccountMenuOpen((isOpen) => !isOpen)}
+              >
+                <span className="avatar">{accountInitials}</span>
+                <span className="account-copy">
+                  <strong>{accountName}</strong>
+                  <span>{roleLabel}</span>
+                </span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {accountMenuOpen ? (
+                <div className="account-menu" id="account-menu">
+                  <Link
+                    href="/profile"
+                    onClick={() => {
+                      setAccountMenuOpen(false);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <UserRound aria-hidden="true" />
+                    Profil akun
+                  </Link>
+                  <button onClick={() => void handleSignOut()}>
+                    <LogOut aria-hidden="true" />
+                    Keluar
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
       </aside>
@@ -1337,9 +1396,14 @@ function ParticipantScoreRecap() {
   );
 }
 
-function ParticipantProfile({ notify }: { notify: Notify }) {
-  const { data, currentUserId, isConnected, signOut } = useWorkspace();
-  const router = useRouter();
+function AccountProfile({ notify }: { notify: Notify }) {
+  const {
+    data,
+    currentUserId,
+    isConnected,
+    profile,
+    refreshWorkspace,
+  } = useWorkspace();
   const participant = data.participants.find(
     (person) => person.id === currentUserId,
   );
@@ -1349,82 +1413,374 @@ function ParticipantProfile({ notify }: { notify: Notify }) {
       ? undefined
       : getTeam(data, CURRENT_TEAM_ID);
   const school = data.schools.find((item) => item.id === participant?.schoolId);
-  const initials = (participant?.name ?? "Peserta")
+  const name = profile?.full_name ?? participant?.name ?? "";
+  const [fullName, setFullName] = React.useState(name);
+  const [loginId, setLoginId] = React.useState("");
+  const [placeOfBirth, setPlaceOfBirth] = React.useState("");
+  const [dateOfBirth, setDateOfBirth] = React.useState("");
+  const [phoneNumber, setPhoneNumber] = React.useState("");
+  const [motto, setMotto] = React.useState("");
+  const [isLoadingProfile, setIsLoadingProfile] = React.useState(isConnected);
+  const [currentPassword, setCurrentPassword] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [isSavingProfile, setIsSavingProfile] = React.useState(false);
+  const [isSavingPassword, setIsSavingPassword] = React.useState(false);
+  const [profileError, setProfileError] = React.useState("");
+  const [profileLoadError, setProfileLoadError] = React.useState("");
+  const [passwordError, setPasswordError] = React.useState("");
+  const [passwordSuccess, setPasswordSuccess] = React.useState("");
+  const initials = name
     .split(/\s+/)
     .slice(0, 2)
-    .map((part) => part[0])
+    .map((part) => part[0] ?? "")
     .join("")
     .toUpperCase();
+  const accountRoleNames: Record<Role, string> = {
+    operator: "Operator pusat",
+    panitia: "Panitia",
+    juri: "Juri",
+    peserta: "Peserta",
+    pendamping_regu: "Pendamping regu",
+  };
+
+  React.useEffect(() => {
+    if (!isConnected) return;
+    const controller = new AbortController();
+    const loadProfile = async () => {
+      try {
+        const response = await fetch("/api/profile", {
+          signal: controller.signal,
+        });
+        const result: unknown = await response.json();
+        if (!response.ok || !isJsonRecord(result) || !isJsonRecord(result.profile)) {
+          const message =
+            isJsonRecord(result) && typeof result.error === "string"
+              ? result.error
+              : "Profil akun gagal dimuat.";
+          throw new Error(message);
+        }
+        const account = result.profile;
+        if (
+          typeof account.full_name !== "string" ||
+          (typeof account.login_id !== "string" && account.login_id !== null) ||
+          (typeof account.phone_number !== "string" &&
+            account.phone_number !== null) ||
+          typeof account.place_of_birth !== "string" ||
+          (typeof account.date_of_birth !== "string" &&
+            account.date_of_birth !== null) ||
+          typeof account.motto !== "string"
+        ) {
+          throw new Error("Data profil akun tidak valid.");
+        }
+        setFullName(account.full_name);
+        setLoginId(account.login_id ?? "");
+        setPlaceOfBirth(account.place_of_birth);
+        setDateOfBirth(account.date_of_birth ?? "");
+        setPhoneNumber(account.phone_number ?? "");
+        setMotto(account.motto);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Gagal memuat profil akun.", error);
+        setProfileLoadError(
+          error instanceof Error ? error.message : "Profil akun gagal dimuat.",
+        );
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingProfile(false);
+      }
+    };
+    void loadProfile();
+    return () => controller.abort();
+  }, [isConnected]);
+
+  const saveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setProfileError("");
+    setIsSavingProfile(true);
+    try {
+      const response = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName,
+          loginId,
+          placeOfBirth,
+          dateOfBirth,
+          phoneNumber,
+          motto,
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "Profil gagal disimpan. Coba lagi.";
+        throw new Error(message);
+      }
+      await refreshWorkspace();
+      notify("Profil akun berhasil diperbarui.");
+    } catch (error) {
+      console.error("Gagal menyimpan perubahan profil.", error);
+      setProfileError(
+        error instanceof Error ? error.message : "Profil gagal disimpan.",
+      );
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const savePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError("");
+    setPasswordSuccess("");
+    if (newPassword.length < 8) {
+      setPasswordError("Kata sandi harus memiliki minimal 8 karakter.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Konfirmasi kata sandi belum sama.");
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) throw new Error("Konfigurasi Supabase belum tersedia.");
+      const { error } = await supabase.auth.updateUser({
+        current_password: currentPassword,
+        password: newPassword,
+      });
+      if (error) throw error;
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordSuccess("Kata sandi berhasil diperbarui.");
+      notify("Kata sandi berhasil diperbarui.");
+    } catch (error) {
+      console.error("Gagal memperbarui kata sandi.", error);
+      setPasswordError(
+        error instanceof Error
+          ? error.message
+          : "Kata sandi gagal diperbarui. Coba lagi.",
+      );
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
 
   return (
     <>
       <PageHeading
-        title="Profil peserta"
-        description="Informasi akun dan regu yang terdaftar pada kegiatan LT-1."
+        title="Profil akun"
+        description="Perbarui informasi diri dan akses masuk akun Anda."
       />
-      <section className="panel panel-pad participant-profile-card">
-        <div className="participant-profile-heading">
-          <span className="participant-avatar" aria-hidden="true">
-            {initials}
-          </span>
-          <div>
-            <h2>{participant?.name ?? "Peserta belum dipetakan"}</h2>
-            <p>
-              {participant?.isPinru
-                ? "Pemimpin regu"
-                : team
-                  ? "Anggota regu"
-                  : "Belum dipetakan ke regu"}
+      <div className="account-profile-layout">
+        <section className="panel panel-pad account-profile-card">
+          <div className="participant-profile-heading">
+            <span className="participant-avatar" aria-hidden="true">
+              {initials || <UserRound aria-hidden="true" />}
+            </span>
+            <div>
+              <h2>{name || "Akun LT-1"}</h2>
+              <p>
+                {profile?.role
+                  ? accountRoleNames[profile.role]
+                  : "Akun pratinjau"}
+              </p>
+            </div>
+          </div>
+          {participant ? (
+            <dl className="participant-profile-details">
+              <div>
+                <dt>Regu</dt>
+                <dd>{team?.name ?? "Belum ditentukan"}</dd>
+              </div>
+              <div>
+                <dt>Kategori</dt>
+                <dd>{team?.category ?? "Belum ditentukan"}</dd>
+              </div>
+              <div>
+                <dt>Pangkalan</dt>
+                <dd>{school?.name ?? "Belum ditentukan"}</dd>
+              </div>
+              <div>
+                <dt>Periode</dt>
+                <dd>LT-1 · 2026</dd>
+              </div>
+            </dl>
+          ) : null}
+          {profileLoadError ? (
+            <p className="form-error" role="alert">
+              {profileLoadError}
             </p>
-          </div>
-        </div>
-        <dl className="participant-profile-details">
-          <div>
-            <dt>Regu</dt>
-            <dd>{team?.name ?? "Belum ditentukan"}</dd>
-          </div>
-          <div>
-            <dt>Kategori</dt>
-            <dd>{team?.category ?? "Belum ditentukan"}</dd>
-          </div>
-          <div>
-            <dt>Pangkalan</dt>
-            <dd>{school?.name ?? "Belum ditentukan"}</dd>
-          </div>
-          <div>
-            <dt>Periode</dt>
-            <dd>LT-1 · 2026</dd>
-          </div>
-        </dl>
-        <div className="participant-profile-actions">
-          <Link className="button button-secondary" href={`/verify/${currentUserId}`}>
-            <ShieldCheck aria-hidden="true" />
-            Verifikasi sertifikat
-          </Link>
-          {isConnected ? (
+          ) : null}
+          <form className="form-stack account-profile-form" onSubmit={saveProfile}>
+            <div className="form-row">
+              <label>
+                <span className="field-label">Nama lengkap</span>
+                <input
+                  className="field"
+                  autoComplete="name"
+                  maxLength={150}
+                  required
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                />
+              </label>
+              <label>
+                <span className="field-label">ID pengguna</span>
+                <input
+                  className="field"
+                  autoComplete="username"
+                  maxLength={64}
+                  pattern="[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*"
+                  required
+                  value={loginId}
+                  onChange={(event) => setLoginId(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="form-row">
+              <label>
+                <span className="field-label">Tempat lahir</span>
+                <input
+                  className="field"
+                  autoComplete="address-level2"
+                  maxLength={120}
+                  value={placeOfBirth}
+                  onChange={(event) => setPlaceOfBirth(event.target.value)}
+                />
+              </label>
+              <label>
+                <span className="field-label">Tanggal lahir</span>
+                <input
+                  className="field"
+                  type="date"
+                  autoComplete="bday"
+                  value={dateOfBirth}
+                  onChange={(event) => setDateOfBirth(event.target.value)}
+                />
+              </label>
+            </div>
+            <label>
+              <span className="field-label">No. WhatsApp</span>
+              <input
+                className="field"
+                type="tel"
+                autoComplete="tel"
+                maxLength={20}
+                placeholder="+62 812-3456-7890"
+                value={phoneNumber}
+                onChange={(event) => setPhoneNumber(event.target.value)}
+              />
+            </label>
+            <label>
+              <span className="field-label">Motto</span>
+              <textarea
+                className="text-area"
+                maxLength={240}
+                value={motto}
+                onChange={(event) => setMotto(event.target.value)}
+              />
+            </label>
+            {profileError ? (
+              <p className="form-error" role="alert">
+                {profileError}
+              </p>
+            ) : null}
+            <div className="form-footer">
+              <span className="field-hint">
+                T/TL berarti tempat dan tanggal lahir.
+              </span>
+              <button
+                className="button"
+                type="submit"
+                disabled={
+                  !isConnected ||
+                  isSavingProfile ||
+                  isLoadingProfile ||
+                  Boolean(profileLoadError)
+                }
+              >
+                {isLoadingProfile
+                  ? "Memuat profil…"
+                  : isSavingProfile
+                    ? "Menyimpan…"
+                    : "Simpan profil"}
+              </button>
+            </div>
+          </form>
+        </section>
+        <section className="panel panel-pad account-password-card">
+          <SectionHeading
+            title="Kata sandi"
+            detail="Gunakan minimal 8 karakter dan jangan gunakan kata sandi dari akun lain."
+          />
+          <form className="form-stack" onSubmit={savePassword}>
+            <label>
+              <span className="field-label">Kata sandi saat ini</span>
+              <input
+                className="field"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+              />
+            </label>
+            <label>
+              <span className="field-label">Kata sandi baru</span>
+              <input
+                className="field"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                required
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+            <label>
+              <span className="field-label">Ulangi kata sandi baru</span>
+              <input
+                className="field"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                required
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </label>
+            {passwordError ? (
+              <p className="form-error" role="alert">
+                {passwordError}
+              </p>
+            ) : null}
+            {passwordSuccess ? (
+              <p className="form-success" role="status">
+                {passwordSuccess}
+              </p>
+            ) : null}
             <button
-              className="text-link participant-signout"
-              onClick={() => {
-                void signOut()
-                  .then(() => router.replace("/login"))
-                  .catch((error: unknown) => {
-                    console.error("Gagal keluar dari sesi Supabase.", error);
-                    notify("Tidak dapat mengakhiri sesi. Coba lagi.", true);
-                  });
-              }}
+              className="button button-secondary"
+              type="submit"
+              disabled={!isConnected || isSavingPassword}
             >
-              Keluar <ArrowRight aria-hidden="true" />
+              {isSavingPassword ? "Memperbarui…" : "Ubah kata sandi"}
             </button>
-          ) : (
-            <Link className="text-link" href="/login">
-              Keluar dari pratinjau <ArrowRight aria-hidden="true" />
-            </Link>
-          )}
-        </div>
-        <p className="inline-note">
-          Profil ini menggunakan data contoh. Pengaturan akun belum tersambung ke layanan autentikasi.
-        </p>
-      </section>
+          </form>
+          {!isConnected ? (
+            <p className="inline-note">
+              Masuk ke akun LT-1 untuk mengedit profil dan kata sandi.
+            </p>
+          ) : null}
+        </section>
+      </div>
     </>
   );
 }
@@ -6237,7 +6593,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
               ? "panitia"
               : view === "pendamping" || view === "pendampingDashboard"
                 ? "pendamping_regu"
-                : ["participant", "leaderboard", "scan", "teamScores", "profile", "submit"].includes(
+                : ["participant", "leaderboard", "scan", "teamScores", "submit"].includes(
                     view,
                   )
                 ? "peserta"
@@ -6351,7 +6707,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
           content = <ParticipantScoreRecap />;
           break;
         case "profile":
-          content = <ParticipantProfile notify={notify} />;
+          content = <AccountProfile notify={notify} />;
           break;
         case "submit":
           content = <SubmissionPage competitionId={competitionId} notify={notify} />;
@@ -6405,7 +6761,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
 
       return (
         <>
-          <WorkspaceFrame view={view}>{content}</WorkspaceFrame>
+          <WorkspaceFrame view={view} notify={notify}>
+            {content}
+          </WorkspaceFrame>
           {toast ? <StateToast message={toast.message} isError={toast.error} /> : null}
         </>
       );
