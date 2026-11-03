@@ -109,6 +109,7 @@ export type Database = {
         id: string;
         name: string;
         category: Database["public"]["Enums"]["team_category"];
+        pendamping_id: string | null;
         created_at: string;
         updated_at: string;
       }>;
@@ -133,6 +134,10 @@ export type Database = {
         Args: { target_user_id: string };
         Returns: Json;
       };
+      can_access_companion_team: {
+        Args: { target_team_id: string };
+        Returns: boolean;
+      };
       set_certificates_published: {
         Args: { should_publish: boolean };
         Returns: string | null;
@@ -145,12 +150,21 @@ export type Database = {
         Args: { target_user_id: string; target_team_id: string };
         Returns: undefined;
       };
+      set_team_pendamping: {
+        Args: { target_user_id: string; target_team_id: string | null };
+        Returns: undefined;
+      };
     };
     Enums: {
       score_status: "draft" | "pending_review" | "approved" | "revision_needed";
       task_type: "cbt" | "upload" | "live";
       team_category: "putra" | "putri";
-      user_role: "operator" | "panitia" | "juri" | "peserta";
+      user_role:
+        | "operator"
+        | "panitia"
+        | "juri"
+        | "peserta"
+        | "pendamping_regu";
     };
     CompositeTypes: Record<string, never>;
   };

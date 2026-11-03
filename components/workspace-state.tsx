@@ -14,7 +14,12 @@ import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/c
 import { loginIdToAuthEmail } from "@/lib/auth/login-id";
 import type { Database, Json } from "@/lib/supabase/database.types";
 
-export type Role = "operator" | "panitia" | "juri" | "peserta";
+export type Role =
+  | "operator"
+  | "panitia"
+  | "juri"
+  | "peserta"
+  | "pendamping_regu";
 export type ScoreStatus =
   | "draft"
   | "pending_review"
@@ -50,6 +55,7 @@ export interface Team {
   id: string;
   name: string;
   category: "Putra" | "Putri";
+  pendampingId?: string | null;
 }
 
 export interface Participant {
@@ -619,6 +625,7 @@ async function loadSupabaseWorkspace(
         id: team.id,
         name: team.name,
         category: team.category === "putra" ? "Putra" : "Putri",
+        pendampingId: team.pendamping_id,
       })),
       participants: profileRows
         .filter((person) => person.role === "peserta")

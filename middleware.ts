@@ -7,6 +7,8 @@ const roleRoutes: { prefix: string; role: Database["public"]["Enums"]["user_role
   { prefix: "/operator", role: "operator" },
   { prefix: "/juri", role: "juri" },
   { prefix: "/panitia", role: "panitia" },
+  { prefix: "/pendamping", role: "pendamping_regu" },
+  { prefix: "/api/pendamping", role: "pendamping_regu" },
   { prefix: "/dashboard", role: "peserta" },
   { prefix: "/leaderboard", role: "peserta" },
   { prefix: "/scan-task", role: "peserta" },
@@ -123,6 +125,7 @@ export async function middleware(request: NextRequest) {
         panitia: "/panitia",
         juri: "/juri",
         peserta: "/dashboard",
+        pendamping_regu: "/pendamping",
       };
       const landingUrl = request.nextUrl.clone();
       landingUrl.pathname = homeByRole[profile.role];
@@ -134,7 +137,7 @@ export async function middleware(request: NextRequest) {
   if (user && request.nextUrl.pathname === "/login") {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("is_active")
+      .select("role,is_active")
       .eq("id", user.id)
       .maybeSingle();
     if (profileError) {
@@ -143,9 +146,15 @@ export async function middleware(request: NextRequest) {
         status: 503,
       });
     }
-    if (profile?.is_active) {
+    if (profile?.is_active && profile.role) {
       const dashboardUrl = request.nextUrl.clone();
-      dashboardUrl.pathname = "/dashboard";
+      dashboardUrl.pathname = {
+        operator: "/operator",
+        panitia: "/panitia",
+        juri: "/juri",
+        peserta: "/dashboard",
+        pendamping_regu: "/pendamping",
+      }[profile.role];
       dashboardUrl.search = "";
       return NextResponse.redirect(dashboardUrl);
     }

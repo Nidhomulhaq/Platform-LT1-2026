@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { loginIdToAuthEmail, normalizeLoginId } from "@/lib/auth/login-id";
+import { adminRequest, SupabaseAdminError } from "@/lib/supabase/admin-server";
 import type { Database } from "@/lib/supabase/database.types";
 
 export const dynamic = "force-dynamic";
@@ -21,15 +22,10 @@ type MembershipRow = {
   team_id: string;
   is_pinru: boolean;
 };
-
-class SupabaseAdminError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-  }
-}
+type CompanionTeamRow = {
+  id: string;
+  pendamping_id: string;
+};
 
 function jsonResponse(
   body: Record<string, unknown>,
@@ -43,14 +39,6 @@ function jsonResponse(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function getErrorMessage(payload: unknown, fallback: string) {
-  if (!isRecord(payload)) return fallback;
-  for (const key of ["message", "msg", "error_description", "error"]) {
-    if (typeof payload[key] === "string") return payload[key];
-  }
-  return fallback;
 }
 
 async function getOperator() {
@@ -105,64 +93,13 @@ async function getOperator() {
       ),
     };
   }
-  return { userId: user.id, projectUrl };
-}
-
-function getAdminKeys() {
-  const apiKey =
-    process.env.SUPABASE_SECRET_KEY ??
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const authorizationToken =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.SUPABASE_SECRET_KEY;
-  if (!apiKey || !authorizationToken) {
-    throw new Error(
-      "Kunci admin Supabase belum tersedia pada environment server.",
-    );
-  }
-  return { apiKey, authorizationToken };
-}
-
-async function adminRequest(
-  projectUrl: string,
-  pathname: string,
-  method: string,
-  body?: unknown,
-  prefer?: string,
-): Promise<unknown> {
-  const { apiKey, authorizationToken } = getAdminKeys();
-  const response = await fetch(`${projectUrl.replace(/\/+$/, "")}${pathname}`, {
-    method,
-    headers: {
-      apikey: apiKey,
-      Authorization: `Bearer ${authorizationToken}`,
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(prefer ? { Prefer: prefer } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    cache: "no-store",
-  });
-  const text = await response.text();
-  let payload: unknown = null;
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = text;
-    }
-  }
-  if (!response.ok) {
-    throw new SupabaseAdminError(
-      getErrorMessage(payload, "Permintaan admin Supabase gagal."),
-      response.status,
-    );
-  }
-  return payload;
+  return { userId: user.id, projectUrl, supabase };
 }
 
 function accountResponse(
   profile: AccountRow,
   membership?: MembershipRow,
+  companionTeamId?: string,
 ) {
   return {
     id: profile.id,
@@ -170,10 +107,33 @@ function accountResponse(
     fullName: profile.full_name,
     role: profile.role,
     schoolId: profile.school_id,
-    teamId: membership?.team_id ?? null,
+    teamId: membership?.team_id ?? companionTeamId ?? null,
     isPinru: membership?.is_pinru ?? false,
     isActive: profile.is_active,
   };
+}
+
+function getTeamAssignmentError(error: { code: string; message: string }) {
+  if (error.code === "23505") {
+    return new SupabaseAdminError(
+      "Regu tersebut sudah ditugaskan kepada Pendamping Regu lain.",
+      409,
+    );
+  }
+  if (error.code === "23514") {
+    return new SupabaseAdminError(
+      "Akun Pendamping Regu harus aktif dan memiliki pangkalan.",
+      409,
+    );
+  }
+  if (error.code === "P0002") {
+    return new SupabaseAdminError("Regu tidak ditemukan.", 404);
+  }
+  console.error("Gagal memperbarui penugasan regu Pendamping.", error.message);
+  return new SupabaseAdminError(
+    "Penugasan regu Pendamping gagal diperbarui.",
+    500,
+  );
 }
 
 async function getAccounts(projectUrl: string) {
@@ -184,7 +144,11 @@ async function getAccounts(projectUrl: string) {
   const membershipsQuery = new URLSearchParams({
     select: "user_id,team_id,is_pinru",
   });
-  const [profiles, memberships] = await Promise.all([
+  const companionTeamsQuery = new URLSearchParams({
+    select: "id,pendamping_id",
+    pendamping_id: "not.is.null",
+  });
+  const [profiles, memberships, companionTeams] = await Promise.all([
     adminRequest(
       projectUrl,
       `/rest/v1/profiles?${profilesQuery}`,
@@ -195,8 +159,17 @@ async function getAccounts(projectUrl: string) {
       `/rest/v1/team_members?${membershipsQuery}`,
       "GET",
     ),
+    adminRequest(
+      projectUrl,
+      `/rest/v1/teams?${companionTeamsQuery}`,
+      "GET",
+    ),
   ]);
-  if (!Array.isArray(profiles) || !Array.isArray(memberships)) {
+  if (
+    !Array.isArray(profiles) ||
+    !Array.isArray(memberships) ||
+    !Array.isArray(companionTeams)
+  ) {
     throw new Error("Respons daftar akun dari Supabase tidak valid.");
   }
   const membershipsByUser = new Map(
@@ -210,6 +183,16 @@ async function getAccounts(projectUrl: string) {
       )
       .map((row) => [row.user_id, row]),
   );
+  const teamsByCompanion = new Map(
+    companionTeams
+      .filter(
+        (row): row is CompanionTeamRow =>
+          isRecord(row) &&
+          typeof row.id === "string" &&
+          typeof row.pendamping_id === "string",
+      )
+      .map((row) => [row.pendamping_id, row.id]),
+  );
   return profiles.flatMap((row) => {
     if (
       !isRecord(row) ||
@@ -220,7 +203,8 @@ async function getAccounts(projectUrl: string) {
       (row.role !== "operator" &&
         row.role !== "panitia" &&
         row.role !== "juri" &&
-        row.role !== "peserta") ||
+        row.role !== "peserta" &&
+        row.role !== "pendamping_regu") ||
       typeof row.is_active !== "boolean"
     ) {
       return [];
@@ -233,7 +217,13 @@ async function getAccounts(projectUrl: string) {
       school_id: row.school_id,
       is_active: row.is_active,
     };
-    return [accountResponse(profile, membershipsByUser.get(profile.id))];
+    return [
+      accountResponse(
+        profile,
+        membershipsByUser.get(profile.id),
+        teamsByCompanion.get(profile.id),
+      ),
+    ];
   });
 }
 
@@ -260,7 +250,8 @@ function isAccountRole(value: unknown): value is AccountRole {
     value === "operator" ||
     value === "panitia" ||
     value === "juri" ||
-    value === "peserta"
+    value === "peserta" ||
+    value === "pendamping_regu"
   );
 }
 
@@ -433,17 +424,21 @@ export async function POST(request: NextRequest) {
     );
   }
   if (
-    body.role === "peserta" &&
+    (body.role === "peserta" || body.role === "pendamping_regu") &&
     (typeof body.schoolId !== "string" || !isUuid(body.schoolId))
   ) {
     return jsonResponse(
-      { error: "Pangkalan wajib dipilih untuk akun Peserta." },
+      { error: "Pangkalan wajib dipilih untuk Peserta dan Pendamping Regu." },
       400,
     );
   }
-  if (body.role !== "peserta" && body.schoolId) {
+  if (
+    body.role !== "peserta" &&
+    body.role !== "pendamping_regu" &&
+    body.schoolId
+  ) {
     return jsonResponse(
-      { error: "Pangkalan hanya dapat ditetapkan pada akun Peserta." },
+      { error: "Pangkalan hanya dapat ditetapkan pada Peserta atau Pendamping Regu." },
       400,
     );
   }
@@ -501,7 +496,10 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         login_id: loginId,
         role: body.role,
-        school_id: body.role === "peserta" ? body.schoolId : null,
+        school_id:
+          body.role === "peserta" || body.role === "pendamping_regu"
+            ? body.schoolId
+            : null,
         is_active: true,
       },
       "return=representation",
@@ -648,7 +646,7 @@ export async function PATCH(request: NextRequest) {
       }
       const query = new URLSearchParams({
         id: `eq.${body.userId}`,
-        select: "id,role,is_active",
+        select: "id,role,is_active,school_id",
       });
       const currentProfiles = await adminRequest(
         auth.projectUrl,
@@ -657,6 +655,25 @@ export async function PATCH(request: NextRequest) {
       );
       if (!Array.isArray(currentProfiles) || !isRecord(currentProfiles[0])) {
         return jsonResponse({ error: "Akun tidak ditemukan." }, 404);
+      }
+      if (
+        body.role === "pendamping_regu" &&
+        !isUuid(currentProfiles[0].school_id)
+      ) {
+        return jsonResponse(
+          { error: "Akun Pendamping Regu harus memiliki pangkalan. Buat akun baru dengan pangkalan yang benar." },
+          409,
+        );
+      }
+      if (
+        currentProfiles[0].role === "pendamping_regu" &&
+        body.role !== "pendamping_regu"
+      ) {
+        const { error } = await auth.supabase.rpc("set_team_pendamping", {
+          target_user_id: body.userId,
+          target_team_id: null,
+        });
+        if (error) throw getTeamAssignmentError(error);
       }
       if (
         currentProfiles[0].role === "operator" &&
@@ -672,7 +689,11 @@ export async function PATCH(request: NextRequest) {
         "PATCH",
         {
           role: body.role,
-          ...(body.role === "peserta" ? {} : { school_id: null }),
+          ...(
+            body.role === "peserta" || body.role === "pendamping_regu"
+              ? {}
+              : { school_id: null }
+          ),
         },
         "return=representation",
       );
@@ -728,6 +749,17 @@ export async function PATCH(request: NextRequest) {
       );
       if (!Array.isArray(profiles) || !isRecord(profiles[0])) {
         return jsonResponse({ error: "Akun tidak ditemukan." }, 404);
+      }
+      if (profiles[0].role === "pendamping_regu") {
+        const { error } = await auth.supabase.rpc("set_team_pendamping", {
+          target_user_id: body.userId,
+          target_team_id: body.teamId ?? null,
+        });
+        if (error) throw getTeamAssignmentError(error);
+        return jsonResponse({
+          teamId: body.teamId ?? null,
+          isPinru: false,
+        });
       }
       if (profiles[0].role !== "peserta") {
         return jsonResponse(

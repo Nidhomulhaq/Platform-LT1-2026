@@ -22,12 +22,14 @@ Platform ini adalah sistem berbasis *web cloud* yang dirancang untuk mengelola, 
 | **Panitia** | `panitia` | Pada pos/mata lomba yang ditugaskan, membuka atau menyampaikan instruksi yang disiapkan Operator, mencatat kehadiran, dan memantau status pengumpulan tugas. |
 | **Juri** | `juri` | Pada mata lomba yang ditugaskan, memberi nilai 0–100 pada setiap kriteria, menyimpan draf, memberi catatan, dan mengirim akumulasi nilainya kepada Operator untuk ditinjau. Juri hanya melihat penilaian miliknya dan dapat memperbaruinya sampai disetujui. |
 | **Peserta** | `peserta` | Melihat tugas dan progres regu, mengoleksi lencana, melihat nilai regu setelah disetujui, serta mengakses sertifikat setelah diterbitkan. Leaderboard hanya terlihat setelah dirilis Operator. Hanya Pinru yang dapat mengirim atau memperbarui tugas atas nama regu; anggota lain hanya melihat status. |
+| **Pendamping Regu** | `pendamping_regu` | Dibuat dan ditugaskan Operator ke satu regu serta pangkalan. Hanya pada regu tersebut, mendaftarkan peserta dengan nama lengkap; sistem membuat ID login dan kata sandi sementara untuk tiap peserta. Pendamping membagikan kredensial secara privat dan tidak dapat mengakses regu lain atau mengubah data peserta setelah akun dibuat. |
 
 ### Aturan Otorisasi yang Berlaku
 
 * Penugasan membatasi akses Panitia ke pos/mata lomba dan akses Juri ke mata lomba yang ditugaskan. Operator mengelola penugasan tersebut.
 * Panitia tidak dapat mengubah isi instruksi, mengelola akun atau data master, menginput nilai, maupun mengesahkan nilai.
 * Juri tidak dapat mengesahkan nilai atau menerbitkan leaderboard/sertifikat. Setelah Operator menyetujui nilai, nilai terkunci bagi Juri.
+* Pendamping Regu hanya dapat melihat satu regu yang ditugaskan Operator dan mendaftarkan akun Peserta ke regu tersebut. Pangkalan peserta mengikuti pangkalan pada akun Pendamping. Pendamping tidak dapat membuat/menetapkan regu, membuat akun non-Peserta, atau mengakses regu lain.
 * Nilai berstatus `approved` dapat dilihat anggota regu sebelum leaderboard dipublikasikan. Publikasi leaderboard dan sertifikat tetap merupakan kontrol terpisah milik Operator.
 * Hak akses wajib ditegakkan pada backend dan kebijakan Row Level Security (RLS), bukan hanya dengan menyembunyikan navigasi atau tombol di UI.
 
@@ -128,12 +130,20 @@ pengiriman tugas khusus Pinru, alur perubahan nilai Juri sebelum persetujuan, se
 nilai yang disetujui untuk regu. Manajemen akun Operator berjalan melalui endpoint server dan
 membutuhkan secret Supabase privat pada environment server.
 
-Migration baru ini **belum diterapkan atau diuji pada database dalam sesi implementasi** karena
-database Supabase lokal/staging tidak tersedia. Sebelum dipakai pada kegiatan sungguhan, jalankan
-migration setelah migration sebelumnya dan uji akses RLS positif/negatif untuk setiap role,
-termasuk akses lintas penugasan, lintas regu, submit non-Pinru, penonaktifan akun, serta perubahan
-nilai setelah persetujuan. Sampai validasi tersebut selesai, jangan menganggap aturan database
-sudah aktif pada proyek Supabase.
+Role Pendamping Regu ditambahkan melalui migration
+[`20261103015923_add_pendamping_regu_role.sql`](./supabase/migrations/20261103015923_add_pendamping_regu_role.sql)
+dan
+[`20261103015929_assign_pendamping_to_teams.sql`](./supabase/migrations/20261103015929_assign_pendamping_to_teams.sql).
+Operator menetapkan satu regu dan pangkalan untuk tiap pendamping; pendamping membuat akun
+peserta melalui endpoint server, dengan kredensial sementara yang ditampilkan satu kali.
+
+Migration otorisasi dan role terbaru **belum diterapkan atau diuji pada database dalam sesi
+implementasi** karena database Supabase lokal/staging tidak tersedia. Sebelum dipakai pada
+kegiatan sungguhan, jalankan seluruh migration berurutan dan uji akses RLS positif/negatif untuk
+setiap role, termasuk akses lintas penugasan, lintas regu, submit non-Pinru, pendaftaran peserta
+oleh pendamping yang tidak ditugaskan, penonaktifan akun, serta perubahan nilai setelah persetujuan.
+Sampai validasi tersebut selesai, jangan menganggap aturan database sudah aktif pada proyek
+Supabase.
 
 ### DDL Versi Lama (Referensi Non-Eksekusi)
 
@@ -142,7 +152,7 @@ sudah aktif pada proyek Supabase.
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. ENUM TYPES
-CREATE TYPE user_role AS ENUM ('operator', 'panitia', 'juri', 'peserta');
+CREATE TYPE user_role AS ENUM ('operator', 'panitia', 'juri', 'peserta', 'pendamping_regu');
 CREATE TYPE team_category AS ENUM ('putra', 'putri');
 CREATE TYPE task_type AS ENUM ('cbt', 'upload', 'live');
 CREATE TYPE score_status AS ENUM ('draft', 'pending_review', 'approved', 'revision_needed');

@@ -79,6 +79,7 @@ type View =
   | "publication"
   | "juri"
   | "panitia"
+  | "pendamping"
   | "verify"
   | "login";
 
@@ -102,6 +103,7 @@ const viewTitles: Record<View, string> = {
   publication: "Papan skor & sertifikat",
   juri: "Input nilai juri",
   panitia: "Kegiatan & kehadiran",
+  pendamping: "Pendaftaran peserta",
   verify: "Verifikasi sertifikat",
   login: "Masuk",
 };
@@ -157,6 +159,8 @@ function IconForView({ view }: { view: View }) {
       return <FileCheck2 {...props} />;
     case "panitia":
       return <CalendarCheck {...props} />;
+    case "pendamping":
+      return <UserRound {...props} />;
     case "verify":
       return <ShieldCheck {...props} />;
     case "login":
@@ -291,6 +295,8 @@ function WorkspaceFrame({
         ? "juri"
         : view === "panitia"
           ? "panitia"
+          : view === "pendamping"
+            ? "pendamping_regu"
           : "peserta";
   const role: Role = isConnected ? profile?.role ?? "peserta" : routeRole;
 
@@ -298,6 +304,7 @@ function WorkspaceFrame({
     { value: "peserta", label: "Peserta", path: "/dashboard" },
     { value: "juri", label: "Juri", path: "/juri" },
     { value: "panitia", label: "Panitia", path: "/panitia" },
+    { value: "pendamping_regu", label: "Pendamping regu", path: "/pendamping" },
     { value: "operator", label: "Operator pusat", path: "/operator" },
   ];
 
@@ -344,7 +351,9 @@ function WorkspaceFrame({
         ? [{ view: "juri", label: "Input nilai", href: "/juri" }]
         : role === "panitia"
           ? [{ view: "panitia", label: "Pos kegiatan", href: "/panitia" }]
-          : [];
+          : role === "pendamping_regu"
+            ? [{ view: "pendamping", label: "Pendaftaran peserta", href: "/pendamping" }]
+            : [];
   const isParticipant = role === "peserta";
 
   return (
@@ -1826,6 +1835,187 @@ function OperatorDashboard() {
   );
 }
 
+function CompanionRegistration({ notify }: { notify: Notify }) {
+  const { data, isConnected, profile, refreshWorkspace } = useWorkspace();
+  const [fullName, setFullName] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
+  const [credentials, setCredentials] = React.useState<
+    Array<{ fullName: string; loginId: string; password: string }>
+  >([]);
+  const team = data.teams.find(
+    (item) => item.pendampingId === profile?.id,
+  );
+  const participants = data.participants.filter(
+    (participant) => participant.teamId === team?.id,
+  );
+  const school = data.schools.find((item) => item.id === profile?.school_id);
+
+  const registerParticipant = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setCreating(true);
+    try {
+      const response = await fetch("/api/pendamping/participants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName }),
+      });
+      const payload: unknown = await response.json();
+      if (!isJsonRecord(payload)) {
+        throw new Error("Respons pendaftaran peserta tidak valid.");
+      }
+      if (!response.ok) {
+        throw new Error(
+          typeof payload.error === "string"
+            ? payload.error
+            : "Akun peserta gagal dibuat.",
+        );
+      }
+      if (
+        typeof payload.fullName !== "string" ||
+        typeof payload.loginId !== "string" ||
+        typeof payload.temporaryPassword !== "string"
+      ) {
+        throw new Error("Server tidak mengembalikan kredensial akun yang valid.");
+      }
+      const { fullName: registeredName, loginId, temporaryPassword } = payload;
+      setCredentials((current) => [
+        {
+          fullName: registeredName,
+          loginId,
+          password: temporaryPassword,
+        },
+        ...current,
+      ]);
+      setFullName("");
+      try {
+        await refreshWorkspace();
+      } catch (error) {
+        console.error("Akun dibuat, tetapi data regu gagal disegarkan.", error);
+        notify("Akun dibuat, tetapi daftar peserta gagal disegarkan.", true);
+        return;
+      }
+      notify("Akun peserta dibuat. Bagikan kredensial secara privat.");
+    } catch (error) {
+      console.error("Gagal mendaftarkan peserta pendamping.", error);
+      notify(
+        error instanceof Error ? error.message : "Akun peserta gagal dibuat.",
+        true,
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <>
+      <PageHeading
+        title="Pendaftaran peserta"
+        description="Daftarkan peserta ke regu yang ditugaskan kepada Anda. Akun dibuat khusus untuk regu tersebut."
+      />
+      {!isConnected ? (
+        <div className="notice" role="note">
+          <CircleHelp aria-hidden="true" />
+          <p>Pendaftaran tersedia setelah aplikasi terhubung ke Supabase.</p>
+        </div>
+      ) : !team ? (
+        <div className="notice" role="status">
+          <CircleHelp aria-hidden="true" />
+          <p>
+            Belum ada regu yang ditugaskan. Hubungi Operator untuk menetapkan
+            satu regu dan pangkalan pada akun Anda.
+          </p>
+        </div>
+      ) : (
+        <>
+          <section className="panel panel-pad">
+            <SectionHeading
+              title={`${team.name} · ${team.category}`}
+              detail={`Pangkalan: ${school?.name ?? "Belum ditetapkan"}. ${participants.length} peserta terdaftar.`}
+            />
+            <form className="school-fields" onSubmit={registerParticipant}>
+              <label>
+                <span className="field-label">Nama lengkap peserta</span>
+                <input
+                  className="field"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  minLength={1}
+                  maxLength={150}
+                  required
+                />
+              </label>
+              <button
+                className="button button-small"
+                type="submit"
+                disabled={
+                  creating ||
+                  !fullName.trim() ||
+                  !profile?.school_id
+                }
+              >
+                {creating ? "Membuat akun…" : "Daftarkan peserta"}
+              </button>
+            </form>
+            {!profile?.school_id ? (
+              <p className="field-hint" role="alert">
+                Akun pendamping belum memiliki pangkalan. Minta Operator
+                memperbarui data akun sebelum mendaftarkan peserta.
+              </p>
+            ) : null}
+          </section>
+
+          {credentials.length ? (
+            <section className="panel panel-pad" style={{ marginTop: 18 }}>
+              <SectionHeading
+                title="Kredensial peserta baru"
+                detail="Simpan dan bagikan secara privat. Kata sandi sementara tidak dapat dilihat kembali setelah meninggalkan halaman."
+              />
+              <div className="activity-list companion-credentials">
+                {credentials.map((credential) => (
+                  <div className="activity-row" key={credential.loginId}>
+                    <span className="activity-copy">
+                      <strong>{credential.fullName}</strong>
+                      <span>
+                        ID pengguna: <code>{credential.loginId}</code>
+                      </span>
+                      <span>
+                        Kata sandi sementara: <code>{credential.password}</code>
+                      </span>
+                    </span>
+                    </div>
+                  ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="panel panel-pad" style={{ marginTop: 18 }}>
+            <SectionHeading title="Peserta regu" />
+            {participants.length ? (
+              <div className="activity-list">
+                {participants.map((participant) => (
+                  <div className="activity-row" key={participant.id}>
+                    <span className="activity-copy">
+                      <strong>{participant.name}</strong>
+                      <span>{participant.isPinru ? "Pinru" : "Peserta"}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Users aria-hidden="true" />
+                <strong>Belum ada peserta</strong>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </>
+  );
+}
+
 type ManagedAccount = {
   id: string;
   loginId: string;
@@ -1842,6 +2032,7 @@ const accountRoleLabels: Record<Role, string> = {
   panitia: "Panitia",
   juri: "Juri",
   peserta: "Peserta",
+  pendamping_regu: "Pendamping regu",
 };
 
 function escapeXml(value: string) {
@@ -1863,7 +2054,13 @@ function createAccountsWorkbook(
   accounts: Array<ManagedAccount & { password: string }>,
   teams: Team[],
 ) {
-  const roles: Role[] = ["peserta", "panitia", "juri", "operator"];
+  const roles: Role[] = [
+    "peserta",
+    "pendamping_regu",
+    "panitia",
+    "juri",
+    "operator",
+  ];
   const worksheets = roles
     .map((role) => {
       const rows = accounts
@@ -1911,7 +2108,8 @@ function isManagedAccount(value: unknown): value is ManagedAccount {
     (value.role === "operator" ||
       value.role === "panitia" ||
       value.role === "juri" ||
-      value.role === "peserta") &&
+      value.role === "peserta" ||
+      value.role === "pendamping_regu") &&
     (typeof value.schoolId === "string" || value.schoolId === null) &&
     (typeof value.teamId === "string" || value.teamId === null) &&
     typeof value.isPinru === "boolean" &&
@@ -2143,7 +2341,10 @@ function AccountManagement({ notify }: { notify: Notify }) {
         fullName,
         role,
         teamId: role === "peserta" ? teamId || null : null,
-        schoolId: role === "peserta" ? schoolId || null : null,
+        schoolId:
+          role === "peserta" || role === "pendamping_regu"
+            ? schoolId || null
+            : null,
         isPinru: false,
       });
       const createdAccount = payload.account;
@@ -2254,7 +2455,8 @@ function AccountManagement({ notify }: { notify: Notify }) {
             updatedRole !== "operator" &&
             updatedRole !== "panitia" &&
             updatedRole !== "juri" &&
-            updatedRole !== "peserta"
+            updatedRole !== "peserta" &&
+            updatedRole !== "pendamping_regu"
           ) {
             throw new Error("Server tidak mengembalikan peran yang valid.");
           }
@@ -2357,28 +2559,31 @@ function AccountManagement({ notify }: { notify: Notify }) {
                   <option value="peserta">Peserta</option>
                   <option value="panitia">Panitia</option>
                   <option value="juri">Juri</option>
+                  <option value="pendamping_regu">Pendamping regu</option>
                   <option value="operator">Operator pusat</option>
                 </select>
               </label>
-              {role === "peserta" ? (
+              {role === "peserta" || role === "pendamping_regu" ? (
                 <>
+                  {role === "peserta" ? (
+                    <label>
+                      <span className="field-label">Regu</span>
+                      <select
+                        className="field"
+                        value={teamId}
+                        onChange={(event) => setTeamId(event.target.value)}
+                      >
+                        <option value="">Belum dipetakan</option>
+                        {data.teams.map((team) => (
+                          <option value={team.id} key={team.id}>
+                            {team.name} · {team.category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   <label>
-                    <span className="field-label">Regu</span>
-                    <select
-                      className="field"
-                      value={teamId}
-                      onChange={(event) => setTeamId(event.target.value)}
-                    >
-                      <option value="">Belum dipetakan</option>
-                      {data.teams.map((team) => (
-                        <option value={team.id} key={team.id}>
-                          {team.name} · {team.category}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span className="field-label">Pangkalan peserta</span>
+                    <span className="field-label">Pangkalan</span>
                     <select
                       className="field"
                       value={schoolId}
@@ -2393,15 +2598,21 @@ function AccountManagement({ notify }: { notify: Notify }) {
                       ))}
                     </select>
                   </label>
-                  <label className="check-label">
-                    <input
-                      type="checkbox"
-                      checked={isPinru}
-                      disabled={!teamId}
-                      onChange={(event) => setIsPinru(event.target.checked)}
-                    />
-                    Tetapkan sebagai Pinru
-                  </label>
+                  {role === "peserta" ? (
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={isPinru}
+                        disabled={!teamId}
+                        onChange={(event) => setIsPinru(event.target.checked)}
+                      />
+                      Tetapkan sebagai Pinru
+                    </label>
+                  ) : (
+                    <p className="field-hint">
+                      Operator dapat menetapkan satu regu untuk pendamping setelah akun dibuat.
+                    </p>
+                  )}
                 </>
               ) : null}
               <button
@@ -2411,7 +2622,8 @@ function AccountManagement({ notify }: { notify: Notify }) {
                   loading ||
                   !fullName.trim() ||
                   !loginId.trim() ||
-                  (role === "peserta" && !schoolId)
+                  ((role === "peserta" || role === "pendamping_regu") &&
+                    !schoolId)
                 }
               >
                 Buat akun
@@ -2456,6 +2668,7 @@ function AccountManagement({ notify }: { notify: Notify }) {
                     <option value="peserta">Peserta</option>
                     <option value="panitia">Panitia</option>
                     <option value="juri">Juri</option>
+                    <option value="pendamping_regu">Pendamping regu</option>
                     <option value="operator">Operator</option>
                   </select>
                   <button
@@ -2541,7 +2754,8 @@ function AccountManagement({ notify }: { notify: Notify }) {
                         >
                           Simpan peran
                         </button>
-                        {account.role === "peserta" ? (
+                        {account.role === "peserta" ||
+                        account.role === "pendamping_regu" ? (
                           <>
                             <label
                               className="sr-only"
@@ -2561,9 +2775,23 @@ function AccountManagement({ notify }: { notify: Notify }) {
                                 }))
                               }
                             >
-                              <option value="">Belum dipetakan</option>
+                              <option value="">
+                                {account.role === "peserta"
+                                  ? "Belum dipetakan"
+                                  : "Belum ditugaskan"}
+                              </option>
                               {data.teams.map((team) => (
-                                <option key={team.id} value={team.id}>
+                                <option
+                                  key={team.id}
+                                  value={team.id}
+                                  disabled={
+                                    account.role === "pendamping_regu" &&
+                                    Boolean(
+                                      team.pendampingId &&
+                                        team.pendampingId !== account.id,
+                                    )
+                                  }
+                                >
                                   {team.name}
                                 </option>
                               ))}
@@ -2578,7 +2806,9 @@ function AccountManagement({ notify }: { notify: Notify }) {
                               }
                               onClick={() => void updateAccount(account, "map-team")}
                             >
-                              Simpan regu
+                              {account.role === "peserta"
+                                ? "Simpan regu"
+                                : "Tugaskan regu"}
                             </button>
                           </>
                         ) : null}
@@ -5856,7 +6086,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
             ? "juri"
             : view === "panitia"
               ? "panitia"
-              : ["participant", "leaderboard", "scan", "teamScores", "profile", "submit"].includes(
+              : view === "pendamping"
+                ? "pendamping_regu"
+                : ["participant", "leaderboard", "scan", "teamScores", "profile", "submit"].includes(
                     view,
                   )
                 ? "peserta"
@@ -5866,6 +6098,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
         juri: "/juri",
         panitia: "/panitia",
         operator: "/operator",
+        pendamping_regu: "/pendamping",
       };
 
       React.useEffect(() => {
@@ -6006,6 +6239,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
           break;
         case "panitia":
           content = <EventCoordination notify={notify} />;
+          break;
+        case "pendamping":
+          content = <CompanionRegistration notify={notify} />;
           break;
       }
 

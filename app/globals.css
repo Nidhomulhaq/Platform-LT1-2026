@@ -1879,6 +1879,15 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.companion-credentials .activity-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.companion-credentials code {
+  overflow-wrap: anywhere;
+}
+
 .competition-list {
   display: grid;
 }

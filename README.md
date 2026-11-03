@@ -43,10 +43,16 @@ dan jalankan hasilnya memakai `npm run start`.
    [`supabase/migrations/20261102050000_participant_school_assignment.sql`](./supabase/migrations/20261102050000_participant_school_assignment.sql)
    untuk memindahkan relasi pangkalan dari regu ke profil peserta. Migration ini
    mempertahankan pangkalan peserta yang sudah ada dan mengubah verifikasi sertifikat.
-7. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
+7. Jalankan migration
+   [`supabase/migrations/20261103015923_add_pendamping_regu_role.sql`](./supabase/migrations/20261103015923_add_pendamping_regu_role.sql),
+   lalu
+   [`supabase/migrations/20261103015929_assign_pendamping_to_teams.sql`](./supabase/migrations/20261103015929_assign_pendamping_to_teams.sql).
+   Migration ini menambahkan role Pendamping Regu dan penugasan satu regu per pendamping.
+8. Pendaftaran mandiri di website dinonaktifkan. Login menggunakan ID pengguna
    dan kata sandi; alamat email internal Supabase tidak perlu diketahui pengguna.
    Operator dapat membuat atau menghapus akun, mengubah role/regu, menonaktifkan
-   akun, memulai reset kata sandi, memfilter akun berdasarkan role, dan mengunduh
+   akun, memulai reset kata sandi, memfilter akun berdasarkan role, menetapkan
+   satu regu dan pangkalan kepada Pendamping Regu, dan mengunduh
    XLS dengan sheet terpisah per role dari `/operator/accounts`. Proses unduh
    mereset password semua akun karena password lama tidak dapat dibaca kembali
    dari Supabase; konfirmasi diperlukan sebelum reset. File memuat nama lengkap,
@@ -80,9 +86,15 @@ dan jalankan hasilnya memakai `npm run start`.
    `/operator/schools`, isi `POMPOM_SCHOOL_ID` di `.env.local` dengan UUID
    pangkalan tersebut lalu jalankan skrip kembali untuk membuat/memetakan Regu
    Pompom dan menyimpan pangkalan pada profil Adellia.
-7. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
+9. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
+
+Setelah Operator membuat akun Pendamping Regu, tentukan pangkalan saat pembuatan
+akun dan tetapkan satu regu melalui `/operator/accounts`. Pendamping masuk ke
+`/pendamping`, mendaftarkan peserta di regu tersebut, lalu membagikan ID login
+dan kata sandi sementara yang dihasilkan sistem melalui kanal privat. Pendaftaran
+peserta menggunakan secret Supabase privat pada environment server.
 
 Supabase wajib dikonfigurasi untuk membuka aplikasi. Tanpa URL dan publishable
 key, semua halaman kegiatan terkunci dan data demo tidak dimuat. Rute `/register`
@@ -164,6 +176,7 @@ preview.
 - `/profile` — profil peserta dan tautan verifikasi sertifikat.
 - `/juri` — simpan draf dan kirim nilai untuk ditinjau.
 - `/panitia` — rilis tugas dan catat kehadiran regu.
+- `/pendamping` — daftarkan peserta ke regu yang ditugaskan dan bagikan kredensial sementara.
 - `/operator` — ringkasan kegiatan.
 - `/operator/accounts` — buat akun, atur role/regu dan Pinru, nonaktifkan akun,
   atau mulai reset kata sandi.
