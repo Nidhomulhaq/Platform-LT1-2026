@@ -371,15 +371,6 @@ textarea:focus-visible {
 .breadcrumbs {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.breadcrumbs svg {
-  width: 14px;
-  height: 14px;
-  color: #879188;
 }
 
 .topbar-logo {
@@ -389,11 +380,6 @@ textarea:focus-visible {
   padding: 3px 4px;
   border-radius: 4px;
   background: #244634;
-}
-
-.breadcrumbs strong {
-  color: var(--text);
-  font-weight: 550;
 }
 
 .topbar-actions {

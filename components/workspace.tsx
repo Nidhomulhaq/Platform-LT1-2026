@@ -651,8 +651,6 @@ function WorkspaceFrame({
                 height={569}
                 priority
               />
-              <ChevronRight aria-hidden="true" />
-              <strong>{viewTitles[view]}</strong>
             </div>
           </div>
           <div className="topbar-actions">
