@@ -643,7 +643,14 @@ function WorkspaceFrame({
               <Menu aria-hidden="true" />
             </button>
             <div className="breadcrumbs">
-              <span>LT-1 Islamiyah</span>
+              <Image
+                className="topbar-logo"
+                src="/logo-lt1.png"
+                alt="Logo Lomba Tingkat 1 Pramuka Islamiyah 2026"
+                width={2000}
+                height={569}
+                priority
+              />
               <ChevronRight aria-hidden="true" />
               <strong>{viewTitles[view]}</strong>
             </div>

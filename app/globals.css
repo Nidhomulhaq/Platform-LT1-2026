@@ -382,6 +382,15 @@ textarea:focus-visible {
   color: #879188;
 }
 
+.topbar-logo {
+  display: block;
+  width: clamp(80px, 8vw, 112px);
+  height: auto;
+  padding: 3px 4px;
+  border-radius: 4px;
+  background: #244634;
+}
+
 .breadcrumbs strong {
   color: var(--text);
   font-weight: 550;
