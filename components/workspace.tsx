@@ -298,6 +298,42 @@ function dashboardViewForRole(role: Role): View {
   }
 }
 
+function dashboardPathForRole(role: Role): string {
+  switch (role) {
+    case "operator":
+      return "/operator";
+    case "juri":
+      return "/juri/dashboard";
+    case "panitia":
+      return "/panitia/dashboard";
+    case "pendamping_regu":
+      return "/pendamping/dashboard";
+    case "peserta":
+      return "/dashboard";
+  }
+}
+
+function bottomNavigation(role: Role) {
+  const dashboardItem = {
+    view: "participant" as const,
+    label: "Dasbor",
+    href: dashboardPathForRole(role),
+  };
+  const publicItems = participantNavigation.filter(
+    (item) =>
+      item.view === "leaderboard" ||
+      item.view === "teamScores" ||
+      item.view === "profile",
+  );
+  const scanItem = participantNavigation.find((item) => item.view === "scan");
+  return [
+    dashboardItem,
+    ...publicItems.slice(0, 1),
+    ...(role === "peserta" && scanItem ? [scanItem] : []),
+    ...publicItems.slice(1),
+  ];
+}
+
 function workspaceNavigation(
   role: Role,
   data: ReturnType<typeof useWorkspace>["data"],
@@ -340,12 +376,7 @@ function workspaceNavigation(
   const dashboardItem: WorkspaceNavigationItem = {
     view: dashboardViewForRole(role),
     label: "Dasbor",
-    href:
-      role === "juri"
-        ? "/juri/dashboard"
-        : role === "panitia"
-          ? "/panitia/dashboard"
-          : "/pendamping/dashboard",
+    href: dashboardPathForRole(role),
   };
 
   if (role === "juri") {
@@ -608,7 +639,7 @@ function WorkspaceFrame({
           </div>
       </aside>
 
-      <main className={`main-shell${isParticipant ? " participant-main-shell" : ""}`}>
+      <main className="main-shell workspace-main-shell">
         <div className="topbar">
           <div className="topbar-leading">
             <button
@@ -665,30 +696,30 @@ function WorkspaceFrame({
         </div>
         <div className="content">{children}</div>
       </main>
-      {isParticipant ? (
-        <nav className="participant-tab-bar" aria-label="Menu peserta">
-          {participantNavigation.map((item) => {
-            const active =
-              item.view === "participant"
-                ? pathname === item.href
-                : item.view === "scan"
-                  ? pathname === item.href || pathname.startsWith("/dashboard/submit/")
-                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                className="participant-tab"
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                aria-label={item.label}
-              >
-                <IconForView view={item.view} />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-      ) : null}
+      <nav className="workspace-tab-bar" aria-label="Navigasi ruang kerja">
+        {bottomNavigation(role).map((item) => {
+          const active =
+            item.view === "participant"
+              ? pathname === item.href
+              : item.view === "scan"
+                ? pathname === item.href ||
+                  pathname.startsWith("/dashboard/submit/")
+                : pathname === item.href ||
+                  pathname.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              className="workspace-tab"
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              aria-label={item.label}
+            >
+              <IconForView view={item.view} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }
@@ -1281,17 +1312,26 @@ function ParticipantLeaderboard() {
 }
 
 function ParticipantScoreRecap() {
-  const { data, currentUserId, isConnected } = useWorkspace();
+  const { data, currentUserId, isConnected, profile } = useWorkspace();
+  const isPublicViewer = profile
+    ? profile.role !== "peserta"
+    : isConnected;
   const participant = data.participants.find(
     (person) => person.id === currentUserId,
   );
   const ownTeamId = participant?.teamId ?? (isConnected ? "" : CURRENT_TEAM_ID);
   const [selectedTeamId, setSelectedTeamId] = React.useState(ownTeamId);
   const canViewAllTeams = data.leaderboardPublished;
-  const team = data.teams.find((item) => item.id === selectedTeamId);
+  const visibleScores = isPublicViewer
+    ? data.scores.filter((score) => score.status === "approved")
+    : data.scores;
+  const effectiveTeamId = canViewAllTeams
+    ? selectedTeamId || ownTeamId || data.teams[0]?.id || ""
+    : ownTeamId;
+  const team = data.teams.find((item) => item.id === effectiveTeamId);
   const scores = data.competitions.map((competition) => ({
     competition,
-    score: team ? getScore(data.scores, team.id, competition.id) : undefined,
+    score: team ? getScore(visibleScores, team.id, competition.id) : undefined,
   }));
   const approvedScores = scores.filter(
     (item) => item.score?.status === "approved",
@@ -1308,6 +1348,24 @@ function ParticipantScoreRecap() {
   const revisionCount = scores.filter(
     (item) => item.score?.status === "revision_needed",
   ).length;
+
+  if (isPublicViewer && !canViewAllTeams) {
+    return (
+      <>
+        <PageHeading
+          title="Rekap nilai regu"
+          description="Periksa nilai yang sudah dipublikasikan untuk seluruh regu."
+        />
+        <section className="panel panel-pad">
+          <div className="empty-state">
+            <ClipboardCheck aria-hidden="true" />
+            <strong>Rekap nilai belum dipublikasikan</strong>
+            <p>Operator akan membuka rekap nilai setelah leaderboard dirilis.</p>
+          </div>
+        </section>
+      </>
+    );
+  }
 
   return (
     <>
@@ -1327,14 +1385,18 @@ function ParticipantScoreRecap() {
             {approvedScores.length}/{data.competitions.length}
           </strong>
         </div>
-        <div>
-          <span>Menunggu</span>
-          <strong>{pendingCount}</strong>
-        </div>
-        <div>
-          <span>Perlu revisi</span>
-          <strong>{revisionCount}</strong>
-        </div>
+        {!isPublicViewer ? (
+          <>
+            <div>
+              <span>Menunggu</span>
+              <strong>{pendingCount}</strong>
+            </div>
+            <div>
+              <span>Perlu revisi</span>
+              <strong>{revisionCount}</strong>
+            </div>
+          </>
+        ) : null}
       </section>
       <section className="panel panel-pad participant-score-panel">
         <div className="participant-team-picker">
@@ -1348,7 +1410,7 @@ function ParticipantScoreRecap() {
             <span className="field-label">Pilih regu</span>
             <select
               className="filter-select"
-              value={canViewAllTeams ? selectedTeamId : ownTeamId}
+              value={effectiveTeamId}
               onChange={(event) => setSelectedTeamId(event.target.value)}
               disabled={!canViewAllTeams}
               aria-label="Pilih regu untuk melihat rekap nilai"
@@ -1374,16 +1436,28 @@ function ParticipantScoreRecap() {
             <div className="participant-score-row" key={competition.id}>
               <div>
                 <strong>{competition.title}</strong>
-                <span>{score?.feedback || "Belum ada catatan penilaian."}</span>
+                <span>
+                  {isPublicViewer
+                    ? score
+                      ? "Nilai disahkan."
+                      : "Nilai belum disahkan."
+                    : score?.feedback || "Belum ada catatan penilaian."}
+                </span>
               </div>
-              <StatusPill
-                status={
-                  score?.status ??
-                  (getSubmission(data, ownTeamId, competition.id)?.submitted
-                    ? "pending_review"
-                    : "not_started")
-                }
-              />
+              {isPublicViewer ? (
+                <span className="status-pill">
+                  {score ? "Disahkan" : "Belum disahkan"}
+                </span>
+              ) : (
+                <StatusPill
+                  status={
+                    score?.status ??
+                    (getSubmission(data, ownTeamId, competition.id)?.submitted
+                      ? "pending_review"
+                      : "not_started")
+                  }
+                />
+              )}
               <strong className="participant-score-value">
                 {score?.status === "approved" ? score.score ?? "—" : "—"}
                 <span>{score?.status === "approved" ? " poin" : ""}</span>
@@ -6593,9 +6667,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
               ? "panitia"
               : view === "pendamping" || view === "pendampingDashboard"
                 ? "pendamping_regu"
-                : ["participant", "leaderboard", "scan", "teamScores", "submit"].includes(
-                    view,
-                  )
+                : ["participant", "scan", "submit"].includes(view)
                 ? "peserta"
                 : null;
       const roleLanding: Record<Role, string> = {
