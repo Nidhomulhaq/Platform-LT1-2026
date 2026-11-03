@@ -116,106 +116,22 @@ textarea:focus-visible {
 }
 
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: block;
   padding: 0 8px;
   color: var(--text);
 }
 
-.brand-light,
-.brand-light .brand-caption {
+.brand-light {
   color: #f9fbf8;
 }
 
-.brand-light .brand-mark {
-  border-color: #8da78f;
-  color: #fff;
-}
-
-.sidebar-brand {
+.brand-logo {
   display: block;
-}
-
-.brand-mark {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid #b9c9b9;
-  border-radius: 50%;
-  color: var(--accent);
-}
-
-.brand-mark svg {
-  width: 21px;
-  height: 21px;
-  stroke-width: 1.8;
-}
-
-.brand-name {
-  display: block;
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-
-.brand-caption {
-  display: block;
-  margin-top: 1px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.workspace-switcher {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 28px 0 27px;
-  padding: 11px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-}
-
-.workspace-switcher-mark {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: none;
-  place-items: center;
-  border-radius: 6px;
-  background: var(--active);
-  color: var(--accent);
-}
-
-.workspace-switcher-mark svg {
-  width: 16px;
-  height: 16px;
-}
-
-.workspace-switcher-copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.workspace-switcher-copy strong,
-.workspace-switcher-copy span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspace-switcher-copy strong {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.workspace-switcher-copy span {
-  margin-top: 1px;
-  color: var(--muted);
-  font-size: 12px;
+  width: min(100%, 240px);
+  height: auto;
+  padding: 8px;
+  border-radius: 8px;
+  background: #244634;
 }
 
 .sidebar-label {
@@ -2313,14 +2229,8 @@ textarea:focus-visible {
   color: #f9fbf8;
 }
 
-.auth-story .brand,
-.auth-story .brand-caption {
+.auth-story .brand {
   color: #f9fbf8;
-}
-
-.auth-story .brand-mark {
-  border-color: #8da78f;
-  color: #fff;
 }
 
 .auth-story-content {

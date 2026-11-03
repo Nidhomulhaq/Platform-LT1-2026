@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowRight,
@@ -22,7 +23,6 @@ import {
   FileCheck2,
   FileText,
   Flag,
-  GraduationCap,
   Home,
   Landmark,
   LockKeyhole,
@@ -118,13 +118,14 @@ const viewTitles: Record<View, string> = {
 function Logo({ light = false }: { light?: boolean }) {
   return (
     <div className={`brand${light ? " brand-light" : ""}`}>
-      <span className="brand-mark" aria-hidden="true">
-        <Compass />
-      </span>
-      <span>
-        <span className="brand-name">Ruang LT-1</span>
-        <span className="brand-caption">Pramuka Islamiyah</span>
-      </span>
+      <Image
+        className="brand-logo"
+        src="/logo-lt1.png"
+        alt="Logo Lomba Tingkat 1 Pramuka Islamiyah 2026"
+        width={2000}
+        height={569}
+        priority
+      />
     </div>
   );
 }
@@ -560,16 +561,6 @@ function WorkspaceFrame({
             >
               <X aria-hidden="true" />
             </button>
-          </div>
-          <div className="workspace-switcher">
-            <span className="workspace-switcher-mark">
-              <GraduationCap aria-hidden="true" />
-            </span>
-            <span className="workspace-switcher-copy">
-              <strong>LT-1 Islamiyah</strong>
-              <span>Periode kegiatan 2026</span>
-            </span>
-            <ChevronDown aria-hidden="true" size={15} />
           </div>
           <p className="sidebar-label">Ruang kerja</p>
           <nav className="sidebar-nav" aria-label="Navigasi utama">
