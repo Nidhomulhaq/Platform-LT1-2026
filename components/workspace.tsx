@@ -210,6 +210,40 @@ function StatusPill({ status }: { status: ScoreStatus | "not_started" }) {
   );
 }
 
+function greetingForHour(hour: number): string {
+  if (hour >= 5 && hour < 11) return "Selamat pagi";
+  if (hour >= 11 && hour < 15) return "Selamat siang";
+  if (hour >= 15 && hour < 18) return "Selamat sore";
+  return "Selamat malam";
+}
+
+function DashboardGreeting({
+  description,
+  fallbackName = "Pengguna",
+  actions,
+}: {
+  description: string;
+  fallbackName?: string;
+  actions?: React.ReactNode;
+}) {
+  const { profile } = useWorkspace();
+  const [greeting, setGreeting] = React.useState("");
+  const accountName = profile?.full_name?.trim() || fallbackName;
+  const firstName = accountName.split(/\s+/)[0] || fallbackName;
+
+  React.useEffect(() => {
+    setGreeting(greetingForHour(new Date().getHours()));
+  }, []);
+
+  return (
+    <PageHeading
+      title={`${greeting ? `${greeting}, ` : ""}${firstName}`}
+      description={description}
+      actions={actions}
+    />
+  );
+}
+
 function StateToast({
   message,
   isError,
@@ -952,8 +986,8 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
 
   return (
     <>
-      <PageHeading
-        title={`Selamat pagi, ${participant?.name?.split(" ")[0] ?? "Peserta"}`}
+      <DashboardGreeting
+        fallbackName={participant?.name?.split(/\s+/)[0] ?? "Peserta"}
         description={`Ringkasan tugas, nilai, dan pencapaian Regu ${team?.name ?? "Anda"}.`}
       />
       <WorkspaceMenu role="peserta" />
@@ -2286,8 +2320,8 @@ function OperatorDashboard() {
 
   return (
     <>
-      <PageHeading
-        title="Ringkasan operator"
+      <DashboardGreeting
+        fallbackName="Operator"
         description="Pantau kesiapan lomba dan tindak lanjuti nilai yang masuk."
         actions={
           <Link className="button" href="/operator/scores">
@@ -2417,23 +2451,23 @@ function RoleWorkspaceDashboard({
 }) {
   const dashboardCopy = {
     juri: {
-      title: "Dasbor juri",
       description: "Buka penugasan dan lanjutkan penilaian mata lomba.",
+      fallbackName: "Juri",
     },
     panitia: {
-      title: "Dasbor panitia",
       description: "Akses pos kegiatan dan pencatatan kehadiran regu.",
+      fallbackName: "Panitia",
     },
     pendamping_regu: {
-      title: "Dasbor pendamping regu",
       description: "Kelola pendaftaran peserta dan data regu dampingan.",
+      fallbackName: "Pendamping",
     },
   }[role];
 
   return (
     <>
-      <PageHeading
-        title={dashboardCopy.title}
+      <DashboardGreeting
+        fallbackName={dashboardCopy.fallbackName}
         description={dashboardCopy.description}
       />
       <WorkspaceMenu role={role} />
