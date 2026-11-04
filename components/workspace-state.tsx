@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -799,21 +800,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(!isConnected);
   const [dataLoading, setDataLoading] = useState(isConnected);
   const [dataError, setDataError] = useState<string | null>(null);
+  const refreshRequestId = useRef(0);
+  const lastForegroundRefreshAt = useRef(0);
 
   const refreshRemoteData = useCallback(async (userId: string | null) => {
+    const requestId = ++refreshRequestId.current;
     setDataLoading(true);
     setDataError(null);
     try {
       const loaded = await loadSupabaseWorkspace(userId);
+      if (requestId !== refreshRequestId.current) return;
       setData(loaded.data);
       setProfile(loaded.profile);
     } catch (error) {
+      if (requestId !== refreshRequestId.current) return;
       console.error("Gagal memuat data LT-1 dari Supabase.", error);
       setDataError(getErrorMessage(error));
       setData(EMPTY_WORKSPACE_DATA);
       setProfile(null);
     } finally {
-      setDataLoading(false);
+      if (requestId === refreshRequestId.current) {
+        setDataLoading(false);
+      }
     }
   }, []);
 
@@ -834,6 +842,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, [refreshRemoteData, supabase]);
+
+  useEffect(() => {
+    if (!supabase || !authReady || !session) return;
+
+    const refreshOnForeground = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastForegroundRefreshAt.current < 1500) return;
+      lastForegroundRefreshAt.current = now;
+      void refreshRemoteData(session.user.id);
+    };
+
+    document.addEventListener("visibilitychange", refreshOnForeground);
+    window.addEventListener("focus", refreshOnForeground);
+    window.addEventListener("pageshow", refreshOnForeground);
+
+    return () => {
+      document.removeEventListener("visibilitychange", refreshOnForeground);
+      window.removeEventListener("focus", refreshOnForeground);
+      window.removeEventListener("pageshow", refreshOnForeground);
+    };
+  }, [authReady, refreshRemoteData, session, supabase]);
 
   const requireClient = () => {
     if (!supabase) throw new Error("Konfigurasi Supabase belum tersedia.");
