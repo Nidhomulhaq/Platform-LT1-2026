@@ -77,6 +77,15 @@ export interface EventStaff {
   name: string;
 }
 
+export interface EventScheduleItem {
+  id: string;
+  title: string;
+  responsiblePerson: string;
+  eventDate: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface JudgeAssignment {
   id: string;
   juriId: string;
@@ -114,6 +123,7 @@ export interface WorkspaceData {
   eventStaff: EventStaff[];
   judgeAssignments: JudgeAssignment[];
   panitiaAssignments: PanitiaAssignment[];
+  eventSchedules: EventScheduleItem[];
   competitions: Competition[];
   scores: ScoreRecord[];
   submissions: Record<string, SubmissionRecord>;
@@ -487,6 +497,7 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
   eventStaff: [],
   judgeAssignments: [],
   panitiaAssignments: [],
+  eventSchedules: [],
   competitions: COMPETITIONS,
   scores: scoreRecords,
   submissions: {
@@ -519,6 +530,7 @@ const EMPTY_WORKSPACE_DATA: WorkspaceData = {
   eventStaff: [],
   judgeAssignments: [],
   panitiaAssignments: [],
+  eventSchedules: [],
   competitions: [],
   scores: [],
   submissions: {},
@@ -597,6 +609,20 @@ async function loadSupabaseWorkspace(
     if (result.error) throw result.error;
   }
 
+  const canViewEventSchedule =
+    profileResult.data !== null &&
+    ["operator", "panitia", "peserta", "pendamping_regu"].includes(
+      profileResult.data.role,
+    );
+  const eventSchedulesResult = canViewEventSchedule
+    ? await supabase
+        .from("event_schedules")
+        .select("*")
+        .order("event_date")
+        .order("start_time")
+    : { data: [], error: null };
+  if (eventSchedulesResult.error) throw eventSchedulesResult.error;
+
   const schoolRows = schoolsResult.data ?? [];
   const teamRows = teamsResult.data ?? [];
   const membershipRows = membershipsResult.data ?? [];
@@ -660,6 +686,14 @@ async function loadSupabaseWorkspace(
           competitionId: assignment.competition_id,
         }),
       ),
+      eventSchedules: (eventSchedulesResult.data ?? []).map((schedule) => ({
+        id: schedule.id,
+        title: schedule.title,
+        responsiblePerson: schedule.responsible_person,
+        eventDate: schedule.event_date,
+        startTime: schedule.start_time.slice(0, 5),
+        endTime: schedule.end_time.slice(0, 5),
+      })),
       competitions: (competitionsResult.data ?? []).map((competition) => ({
         id: competition.id,
         title: competition.title,
@@ -725,6 +759,14 @@ interface WorkspaceContextValue {
   removeJudgeAssignment: (assignmentId: string) => Promise<void>;
   assignPanitia: (panitiaId: string, competitionId: string) => Promise<void>;
   removePanitiaAssignment: (assignmentId: string) => Promise<void>;
+  createEventSchedule: (
+    schedule: Omit<EventScheduleItem, "id">,
+  ) => Promise<void>;
+  updateEventSchedule: (
+    scheduleId: string,
+    schedule: Omit<EventScheduleItem, "id">,
+  ) => Promise<void>;
+  deleteEventSchedule: (scheduleId: string) => Promise<void>;
   updateScore: (
     teamId: string,
     competitionId: string,
@@ -1195,6 +1237,78 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...current,
           panitiaAssignments: current.panitiaAssignments.filter(
             (assignment) => assignment.id !== assignmentId,
+          ),
+        }));
+      },
+      createEventSchedule: async (schedule) => {
+        let nextSchedule: EventScheduleItem = {
+          id: crypto.randomUUID(),
+          ...schedule,
+        };
+        if (supabase) {
+          const { data: saved, error } = await supabase
+            .from("event_schedules")
+            .insert({
+              title: schedule.title,
+              responsible_person: schedule.responsiblePerson,
+              event_date: schedule.eventDate,
+              start_time: schedule.startTime,
+              end_time: schedule.endTime,
+            })
+            .select("*")
+            .single();
+          if (error) throw error;
+          nextSchedule = {
+            id: saved.id,
+            title: saved.title,
+            responsiblePerson: saved.responsible_person,
+            eventDate: saved.event_date,
+            startTime: saved.start_time.slice(0, 5),
+            endTime: saved.end_time.slice(0, 5),
+          };
+        }
+        setData((current) => ({
+          ...current,
+          eventSchedules: [...current.eventSchedules, nextSchedule],
+        }));
+      },
+      updateEventSchedule: async (scheduleId, schedule) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("event_schedules")
+            .update({
+              title: schedule.title,
+              responsible_person: schedule.responsiblePerson,
+              event_date: schedule.eventDate,
+              start_time: schedule.startTime,
+              end_time: schedule.endTime,
+            })
+            .eq("id", scheduleId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          eventSchedules: current.eventSchedules.map((item) =>
+            item.id === scheduleId ? { id: scheduleId, ...schedule } : item,
+          ),
+        }));
+      },
+      deleteEventSchedule: async (scheduleId) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("event_schedules")
+            .delete()
+            .eq("id", scheduleId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          eventSchedules: current.eventSchedules.filter(
+            (item) => item.id !== scheduleId,
           ),
         }));
       },

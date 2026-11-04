@@ -89,6 +89,12 @@ dan jalankan hasilnya memakai `npm run start`.
 9. Setelah data dan nilai siap, atur publikasi papan skor serta sertifikat di
    `/operator/publication`. Halaman `/verify/[userId]` hanya mengembalikan data
    sertifikat yang diterbitkan dan memiliki nilai disahkan untuk setiap mata lomba.
+10. Jalankan
+    [`supabase/migrations/20261104175316_event_schedule.sql`](./supabase/migrations/20261104175316_event_schedule.sql)
+    untuk menambahkan rundown multi-hari. Operator dan Panitia dapat menyusun,
+    mengubah, dan menghapus jadwal melalui ruang kerja masing-masing. Peserta dan
+    Pendamping Regu dapat melihat jadwal melalui `/schedule`; waktu yang
+    bertumpang tindih pada tanggal yang sama ditolak oleh aplikasi dan database.
 
 Setelah Operator membuat akun Pendamping Regu, tentukan pangkalan saat pembuatan
 akun dan tetapkan satu regu melalui `/operator/accounts`. Pendamping masuk ke

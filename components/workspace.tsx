@@ -10,6 +10,7 @@ import {
   Bell,
   BookOpen,
   CalendarCheck,
+  CalendarDays,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -57,6 +58,7 @@ import {
   type ScoreStatus,
   type School,
   type Team,
+  type EventScheduleItem,
   useWorkspace,
 } from "@/components/workspace-state";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -78,6 +80,9 @@ type View =
   | "judgeAssignments"
   | "panitiaAssignments"
   | "publication"
+  | "schedule"
+  | "operatorSchedule"
+  | "panitiaSchedule"
   | "juriDashboard"
   | "panitiaDashboard"
   | "pendampingDashboard"
@@ -105,6 +110,9 @@ const viewTitles: Record<View, string> = {
   judgeAssignments: "Penugasan juri",
   panitiaAssignments: "Penugasan panitia",
   publication: "Papan skor & sertifikat",
+  schedule: "Jadwal kegiatan",
+  operatorSchedule: "Jadwal kegiatan",
+  panitiaSchedule: "Jadwal kegiatan",
   juriDashboard: "Dasbor juri",
   panitiaDashboard: "Dasbor panitia",
   pendampingDashboard: "Dasbor pendamping",
@@ -161,6 +169,10 @@ function IconForView({ view }: { view: View }) {
       return <ClipboardCheck {...props} />;
     case "panitiaAssignments":
       return <CalendarCheck {...props} />;
+    case "schedule":
+    case "operatorSchedule":
+    case "panitiaSchedule":
+      return <CalendarDays {...props} />;
     case "publication":
       return <Flag {...props} />;
     case "juri":
@@ -308,6 +320,7 @@ const participantNavigation: {
   { view: "leaderboard", label: "Leaderboard", href: "/leaderboard" },
   { view: "scan", label: "Scan tugas", href: "/scan-task" },
   { view: "teamScores", label: "Rekap nilai", href: "/score-recap" },
+  { view: "schedule", label: "Jadwal kegiatan", href: "/schedule" },
   { view: "profile", label: "Profil", href: "/profile" },
 ];
 
@@ -383,6 +396,11 @@ function workspaceNavigation(
   if (role === "operator") {
     return [
       { view: "operator", label: "Dasbor", href: "/operator" },
+      {
+        view: "operatorSchedule",
+        label: "Jadwal kegiatan",
+        href: "/operator/schedule",
+      },
       { view: "accounts", label: "Manajemen akun", href: "/operator/accounts" },
       {
         view: "scores",
@@ -423,11 +441,17 @@ function workspaceNavigation(
   if (role === "panitia") {
     return [
       dashboardItem,
+      {
+        view: "panitiaSchedule",
+        label: "Jadwal kegiatan",
+        href: "/panitia/schedule",
+      },
       { view: "panitia", label: "Pos kegiatan", href: "/panitia" },
     ];
   }
   return [
     dashboardItem,
+    { view: "schedule", label: "Jadwal kegiatan", href: "/schedule" },
     {
       view: "pendamping",
       label: "Pendaftaran peserta",
@@ -449,6 +473,9 @@ const workspaceMenuDescriptions: Partial<Record<View, string>> = {
   judgeAssignments: "Tentukan juri untuk setiap mata lomba.",
   panitiaAssignments: "Atur penugasan panitia di setiap pos.",
   publication: "Kelola publikasi papan skor dan sertifikat.",
+  operatorSchedule: "Susun rundown kegiatan dan penanggung jawabnya.",
+  panitiaSchedule: "Susun rundown kegiatan dan penanggung jawabnya.",
+  schedule: "Lihat urutan waktu kegiatan lomba.",
   juri: "Masukkan nilai untuk regu pada mata lomba yang ditugaskan.",
   panitia: "Pantau kegiatan dan catat kehadiran regu.",
   pendamping: "Daftarkan peserta dan kelola data regu dampingan.",
@@ -517,11 +544,14 @@ function WorkspaceFrame({
     view === "competitions" ||
     view === "judgeAssignments" ||
     view === "panitiaAssignments" ||
-    view === "publication"
+    view === "publication" ||
+    view === "operatorSchedule"
       ? "operator"
       : view === "juri" || view === "juriDashboard"
         ? "juri"
-        : view === "panitia" || view === "panitiaDashboard"
+        : view === "panitia" ||
+            view === "panitiaDashboard" ||
+            view === "panitiaSchedule"
           ? "panitia"
           : view === "pendamping" || view === "pendampingDashboard"
             ? "pendamping_regu"
@@ -7036,6 +7066,344 @@ function EventCoordination({ notify }: { notify: Notify }) {
       );
     }
 
+    function EventScheduleWorkspace({
+      canEdit,
+      notify,
+    }: {
+      canEdit: boolean;
+      notify: Notify;
+    }) {
+      const {
+        data,
+        createEventSchedule,
+        updateEventSchedule,
+        deleteEventSchedule,
+      } = useWorkspace();
+      const [showForm, setShowForm] = React.useState(false);
+      const [editingId, setEditingId] = React.useState<string | null>(null);
+      const [draft, setDraft] = React.useState<Omit<EventScheduleItem, "id">>({
+        title: "",
+        responsiblePerson: "",
+        eventDate: "",
+        startTime: "",
+        endTime: "",
+      });
+      const [formError, setFormError] = React.useState("");
+      const [saving, setSaving] = React.useState(false);
+      const [deletingId, setDeletingId] = React.useState<string | null>(null);
+      const schedules = [...data.eventSchedules].sort(
+        (left, right) =>
+          left.eventDate.localeCompare(right.eventDate) ||
+          left.startTime.localeCompare(right.startTime),
+      );
+      const groupedSchedules = schedules.reduce<Record<string, EventScheduleItem[]>>(
+        (groups, schedule) => {
+          groups[schedule.eventDate] ??= [];
+          groups[schedule.eventDate].push(schedule);
+          return groups;
+        },
+        {},
+      );
+
+      const resetForm = () => {
+        setDraft({
+          title: "",
+          responsiblePerson: "",
+          eventDate: "",
+          startTime: "",
+          endTime: "",
+        });
+        setEditingId(null);
+        setFormError("");
+      };
+
+      const editSchedule = (schedule: EventScheduleItem) => {
+        setDraft({
+          title: schedule.title,
+          responsiblePerson: schedule.responsiblePerson,
+          eventDate: schedule.eventDate,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+        });
+        setEditingId(schedule.id);
+        setFormError("");
+        setShowForm(true);
+      };
+
+      const submitSchedule = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const title = draft.title.trim();
+        const responsiblePerson = draft.responsiblePerson.trim();
+        if (!title || !responsiblePerson || !draft.eventDate) {
+          setFormError("Lengkapi nama kegiatan, penanggung jawab, dan tanggal.");
+          return;
+        }
+        if (!draft.startTime || !draft.endTime || draft.startTime >= draft.endTime) {
+          setFormError("Waktu selesai harus setelah waktu mulai.");
+          return;
+        }
+        const hasOverlap = schedules.some(
+          (schedule) =>
+            schedule.id !== editingId &&
+            schedule.eventDate === draft.eventDate &&
+            draft.startTime < schedule.endTime &&
+            draft.endTime > schedule.startTime,
+        );
+        if (hasOverlap) {
+          setFormError("Waktu kegiatan bertumpang tindih dengan jadwal lain.");
+          return;
+        }
+
+        setSaving(true);
+        setFormError("");
+        const schedule = { ...draft, title, responsiblePerson };
+        try {
+          if (editingId) {
+            await updateEventSchedule(editingId, schedule);
+            notify("Jadwal kegiatan diperbarui.");
+          } else {
+            await createEventSchedule(schedule);
+            notify("Jadwal kegiatan ditambahkan.");
+          }
+          resetForm();
+          setShowForm(false);
+        } catch (error) {
+          console.error("Gagal menyimpan jadwal kegiatan.", error);
+          const errorCode = isJsonRecord(error) ? error.code : null;
+          setFormError(
+            errorCode === "23P01"
+              ? "Waktu kegiatan bertumpang tindih dengan jadwal lain."
+              : error instanceof Error
+                ? error.message
+                : "Jadwal kegiatan gagal disimpan.",
+          );
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      const removeSchedule = async (schedule: EventScheduleItem) => {
+        if (
+          !window.confirm(
+            `Hapus kegiatan "${schedule.title}" dari jadwal?`,
+          )
+        ) {
+          return;
+        }
+        setDeletingId(schedule.id);
+        try {
+          await deleteEventSchedule(schedule.id);
+          notify("Jadwal kegiatan dihapus.");
+        } catch (error) {
+          console.error("Gagal menghapus jadwal kegiatan.", error);
+          notify(
+            error instanceof Error
+              ? error.message
+              : "Jadwal kegiatan gagal dihapus.",
+            true,
+          );
+        } finally {
+          setDeletingId(null);
+        }
+      };
+
+      const dateLabel = (date: string) => {
+        const parsedDate = new Date(`${date}T12:00:00`);
+        return Number.isNaN(parsedDate.getTime())
+          ? date
+          : parsedDate.toLocaleDateString("id-ID", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            });
+      };
+
+      return (
+        <>
+          <PageHeading
+            title="Jadwal kegiatan"
+            description={
+              canEdit
+                ? "Susun rundown multi-hari. Pastikan waktu kegiatan berurutan dan tidak bertumpang tindih."
+                : "Rundown kegiatan peserta, disusun menurut tanggal dan waktu."
+            }
+            actions={
+              canEdit ? (
+                <button
+                  className="button"
+                  onClick={() => {
+                    if (showForm) {
+                      resetForm();
+                    }
+                    setShowForm((open) => !open);
+                  }}
+                  type="button"
+                >
+                  {showForm ? <X aria-hidden="true" /> : <Plus aria-hidden="true" />}
+                  {showForm ? "Tutup formulir" : "Tambah kegiatan"}
+                </button>
+              ) : null
+            }
+          />
+
+          {canEdit && showForm ? (
+            <section className="schedule-form-card" aria-labelledby="schedule-form-title">
+              <div className="section-heading">
+                <div>
+                  <h2 id="schedule-form-title">
+                    {editingId ? "Edit kegiatan" : "Kegiatan baru"}
+                  </h2>
+                  <p>Waktu selesai harus setelah waktu mulai dan tidak boleh bentrok.</p>
+                </div>
+              </div>
+              <form className="schedule-form" onSubmit={submitSchedule}>
+                <label>
+                  <span className="field-label">Nama kegiatan</span>
+                  <input
+                    className="field"
+                    maxLength={150}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, title: event.target.value }))
+                    }
+                    required
+                    value={draft.title}
+                  />
+                </label>
+                <label>
+                  <span className="field-label">Penanggung jawab</span>
+                  <input
+                    className="field"
+                    maxLength={150}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        responsiblePerson: event.target.value,
+                      }))
+                    }
+                    required
+                    value={draft.responsiblePerson}
+                  />
+                </label>
+                <label>
+                  <span className="field-label">Tanggal</span>
+                  <input
+                    className="field"
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, eventDate: event.target.value }))
+                    }
+                    required
+                    type="date"
+                    value={draft.eventDate}
+                  />
+                </label>
+                <label>
+                  <span className="field-label">Waktu mulai</span>
+                  <input
+                    className="field"
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, startTime: event.target.value }))
+                    }
+                    required
+                    type="time"
+                    value={draft.startTime}
+                  />
+                </label>
+                <label>
+                  <span className="field-label">Waktu selesai</span>
+                  <input
+                    className="field"
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, endTime: event.target.value }))
+                    }
+                    required
+                    type="time"
+                    value={draft.endTime}
+                  />
+                </label>
+                {formError ? (
+                  <p className="schedule-form-error" role="alert">
+                    {formError}
+                  </p>
+                ) : null}
+                <div className="schedule-form-actions">
+                  <button className="button" disabled={saving} type="submit">
+                    {saving ? "Menyimpan…" : editingId ? "Simpan perubahan" : "Simpan kegiatan"}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    disabled={saving}
+                    onClick={() => {
+                      resetForm();
+                      setShowForm(false);
+                    }}
+                    type="button"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
+
+          {schedules.length === 0 ? (
+            <div className="empty-state schedule-empty-state">
+              <CalendarDays aria-hidden="true" />
+              <strong>Belum ada jadwal kegiatan</strong>
+              <p>
+                {canEdit
+                  ? "Tambahkan kegiatan pertama untuk mulai menyusun rundown."
+                  : "Rundown akan ditampilkan di sini setelah diterbitkan."}
+              </p>
+            </div>
+          ) : (
+            <div className="schedule-days">
+              {Object.entries(groupedSchedules).map(([date, daySchedules]) => (
+                <section className="schedule-day" key={date}>
+                  <h2>{dateLabel(date)}</h2>
+                  <ol className="schedule-list">
+                    {daySchedules.map((schedule) => (
+                      <li className="schedule-entry" key={schedule.id}>
+                        <div className="schedule-entry-time">
+                          <strong>{schedule.startTime}</strong>
+                          <span>{schedule.endTime}</span>
+                        </div>
+                        <div className="schedule-entry-content">
+                          <h3>{schedule.title}</h3>
+                          <p>Penanggung jawab: {schedule.responsiblePerson}</p>
+                        </div>
+                        {canEdit ? (
+                          <div className="schedule-entry-actions">
+                            <button
+                              aria-label={`Edit ${schedule.title}`}
+                              className="icon-button"
+                              onClick={() => editSchedule(schedule)}
+                              type="button"
+                            >
+                              <Pencil aria-hidden="true" />
+                            </button>
+                            <button
+                              aria-label={`Hapus ${schedule.title}`}
+                              className="icon-button danger"
+                              disabled={deletingId === schedule.id}
+                              onClick={() => void removeSchedule(schedule)}
+                              type="button"
+                            >
+                              <Trash2 aria-hidden="true" />
+                            </button>
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              ))}
+            </div>
+          )}
+        </>
+      );
+    }
+
     export function WorkspaceApp({
       view,
       competitionId = "",
@@ -7075,11 +7443,14 @@ function EventCoordination({ notify }: { notify: Notify }) {
         view === "competitions" ||
         view === "judgeAssignments" ||
         view === "panitiaAssignments" ||
-        view === "publication"
+        view === "publication" ||
+        view === "operatorSchedule"
           ? "operator"
           : view === "juri" || view === "juriDashboard"
             ? "juri"
-            : view === "panitia" || view === "panitiaDashboard"
+            : view === "panitia" ||
+                view === "panitiaDashboard" ||
+                view === "panitiaSchedule"
               ? "panitia"
               : view === "pendamping" || view === "pendampingDashboard"
                 ? "pendamping_regu"
@@ -7098,7 +7469,12 @@ function EventCoordination({ notify }: { notify: Notify }) {
         if (!isConnected || !authReady || isAuthView) return;
         if (!session) {
           router.replace("/login");
-        } else if (profile && requiredRole && profile.role !== requiredRole) {
+        } else if (
+          profile &&
+          ((requiredRole && profile.role !== requiredRole) ||
+            (view === "schedule" &&
+              !["peserta", "pendamping_regu"].includes(profile.role)))
+        ) {
           router.replace(roleLanding[profile.role]);
         }
       }, [
@@ -7109,6 +7485,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
         requiredRole,
         router,
         session,
+        view,
       ]);
 
       if (!isConnected && !isAuthView) {
@@ -7164,7 +7541,11 @@ function EventCoordination({ notify }: { notify: Notify }) {
             </main>
           );
         }
-        if (requiredRole && profile.role !== requiredRole) {
+        if (
+          (requiredRole && profile.role !== requiredRole) ||
+          (view === "schedule" &&
+            !["peserta", "pendamping_regu"].includes(profile.role))
+        ) {
           return (
             <main className="auth-main">
               <p role="status">Membuka ruang kerja sesuai peran akun…</p>
@@ -7226,6 +7607,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
           break;
         case "publication":
           content = <PublicationSettings notify={notify} />;
+          break;
+        case "schedule":
+          content = <EventScheduleWorkspace canEdit={false} notify={notify} />;
+          break;
+        case "operatorSchedule":
+          content = <EventScheduleWorkspace canEdit notify={notify} />;
+          break;
+        case "panitiaSchedule":
+          content = <EventScheduleWorkspace canEdit notify={notify} />;
           break;
         case "juriDashboard":
           content = <RoleWorkspaceDashboard role="juri" />;

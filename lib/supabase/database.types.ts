@@ -42,6 +42,16 @@ export type Database = {
         certificates_published_at: string | null;
         updated_at: string;
       }>;
+      event_schedules: Table<{
+        id: string;
+        title: string;
+        responsible_person: string;
+        event_date: string;
+        start_time: string;
+        end_time: string;
+        created_at: string;
+        updated_at: string;
+      }>;
       judge_assignments: Table<{
         id: string;
         juri_id: string;
