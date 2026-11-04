@@ -580,6 +580,108 @@ textarea:focus-visible {
   font-weight: 450;
 }
 
+.championship-standings {
+  display: grid;
+  gap: 18px;
+}
+
+.championship-category {
+  min-width: 0;
+}
+
+.championship-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.championship-table th {
+  height: 39px;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.championship-table th:first-child,
+.championship-table td:first-child {
+  padding-left: 0;
+}
+
+.championship-table th:last-child,
+.championship-table td:last-child {
+  padding-right: 0;
+}
+
+.championship-table td {
+  height: 58px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--rule);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.championship-table tbody tr {
+  animation: championship-row-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.championship-table tbody tr.is-current {
+  background: var(--active);
+}
+
+.championship-place {
+  width: 110px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.championship-place svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
+.championship-table tbody tr:nth-child(1) .championship-place {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.championship-table tbody tr:nth-child(2) .championship-place,
+.championship-table tbody tr:nth-child(3) .championship-place {
+  color: var(--text);
+}
+
+.championship-points {
+  font-size: 14px !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.championship-points span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 450;
+}
+
+.championship-empty {
+  min-height: 150px;
+}
+
+@keyframes championship-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .participant-score-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2948,6 +3050,22 @@ textarea:focus-visible {
 
   .participant-ranking-score {
     font-size: 13px;
+  }
+
+  .championship-table th,
+  .championship-table td {
+    padding-right: 7px;
+    padding-left: 7px;
+  }
+
+  .championship-place {
+    width: 78px;
+  }
+
+  .championship-place svg {
+    width: 14px;
+    height: 14px;
+    margin-right: 2px;
   }
 
   .participant-score-summary {

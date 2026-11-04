@@ -1283,6 +1283,10 @@ function ParticipantLeaderboard() {
       };
     })
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  const teamsByCategory = (["Putra", "Putri"] as const).map((category) => ({
+    category,
+    teams: rankedTeams.filter((team) => team.category === category),
+  }));
 
   return (
     <>
@@ -1299,43 +1303,79 @@ function ParticipantLeaderboard() {
           </div>
         </section>
       ) : (
-        <section className="panel panel-pad participant-ranking">
-          <SectionHeading
-            title="Peringkat regu"
-            detail={`${rankedTeams.length} regu · nilai disahkan`}
-            action={<span className="status-pill is-approved">Terbit</span>}
-          />
-          <ol className="participant-ranking-list">
-            {rankedTeams.map((team, index) => (
-              <li
-                className={`participant-ranking-row${team.id === currentTeamId ? " is-current" : ""}`}
-                key={team.id}
-              >
-                <span className="participant-ranking-position">
-                  {index < 3 ? (
-                    <Medal aria-hidden="true" />
-                  ) : (
-                    <span>{index + 1}</span>
-                  )}
-                </span>
-                <span className="participant-ranking-team">
-                  <strong>
-                    {team.name}
-                    {team.id === currentTeamId ? " · Regumu" : ""}
-                  </strong>
-                  <span>
-                    {team.category} · {team.approvedCount}/
-                    {data.competitions.length} nilai
-                  </span>
-                </span>
-                <strong className="participant-ranking-score">
-                  {team.total.toLocaleString("id-ID")}
-                  <span> poin</span>
-                </strong>
-              </li>
-            ))}
-          </ol>
-        </section>
+        <div className="championship-standings">
+          {teamsByCategory.map(({ category, teams }) => (
+            <section
+              className="panel panel-pad participant-ranking championship-category"
+              key={category}
+            >
+              <SectionHeading
+                title={`Kategori ${category}`}
+                detail={`${teams.length} regu · diurutkan dari nilai tertinggi`}
+                action={
+                  category === "Putra" ? (
+                    <span className="status-pill is-approved">Terbit</span>
+                  ) : undefined
+                }
+              />
+              {teams.length ? (
+                <div className="table-scroll">
+                  <table className="championship-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Peringkat</th>
+                        <th scope="col">Regu</th>
+                        <th scope="col">Nilai disahkan</th>
+                        <th className="numeric" scope="col">
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teams.map((team, index) => (
+                        <tr
+                          className={
+                            team.id === currentTeamId ? "is-current" : undefined
+                          }
+                          key={team.id}
+                          style={{
+                            animationDelay: `${Math.min(index, 14) * 55}ms`,
+                          }}
+                        >
+                          <td className="championship-place">
+                            {index < 3 ? (
+                              <Medal aria-hidden="true" />
+                            ) : null}
+                            <span>{index + 1}</span>
+                          </td>
+                          <td>
+                            <span className="table-primary">
+                              {team.name}
+                              {team.id === currentTeamId ? " · Regumu" : ""}
+                            </span>
+                          </td>
+                          <td>
+                            {team.approvedCount}/{data.competitions.length}
+                          </td>
+                          <td className="numeric championship-points">
+                            {team.total.toLocaleString("id-ID")}
+                            <span> poin</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="empty-state championship-empty">
+                  <Trophy aria-hidden="true" />
+                  <strong>Belum ada regu kategori {category.toLowerCase()}</strong>
+                  <p>Peringkat akan muncul setelah regu ditambahkan.</p>
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
       )}
     </>
   );
