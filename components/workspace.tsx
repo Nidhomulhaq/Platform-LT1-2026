@@ -974,15 +974,6 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
   ).length;
   const progress = Math.round((approvedCount / data.competitions.length) * 100);
   const certificateReady = allApproved && data.certificatesPublished;
-  const sortedTeams = data.teams
-    .map((teamItem) => ({
-      ...teamItem,
-      total: approvedScoresForTeam(data.scores, teamItem.id).reduce(
-        (sum, score) => sum + (score.score ?? 0),
-        0,
-      ),
-    }))
-    .sort((a, b) => b.total - a.total);
 
   return (
     <>
@@ -990,7 +981,6 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
         fallbackName={participant?.name?.split(/\s+/)[0] ?? "Peserta"}
         description={`Ringkasan tugas, nilai, dan pencapaian Regu ${team?.name ?? "Anda"}.`}
       />
-      <WorkspaceMenu role="peserta" />
       <section className="scout-banner" aria-labelledby="team-greeting">
         <div className="banner-copy">
           <p className="banner-kicker">LOMBA TINGKAT 1 · 2026</p>
@@ -1022,7 +1012,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
         </div>
       </section>
 
-      <div className="dashboard-grid">
+      <div className="dashboard-grid participant-dashboard-grid">
         <div className="dashboard-column">
           <section className="panel panel-pad">
             <SectionHeading
@@ -1157,102 +1147,6 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
               <Download aria-hidden="true" />
               Unduh sertifikat
             </button>
-          </section>
-          <p className="inline-note">
-            Papan skor {data.leaderboardPublished ? "dirilis" : "belum dirilis"} oleh operator.
-          </p>
-        </div>
-
-        <div className="dashboard-column">
-          <section className="panel panel-pad">
-            <SectionHeading
-              title="Papan skor sementara"
-              detail="Total nilai yang telah disahkan."
-              action={
-                data.leaderboardPublished ? (
-                  <span className="status-pill is-approved">Terbit</span>
-                ) : (
-                  <span className="status-pill">Belum terbit</span>
-                )
-              }
-            />
-            {data.leaderboardPublished ? (
-              <div className="leaderboard-list">
-                {sortedTeams.slice(0, 5).map((teamItem, index) => (
-                  <div className="leaderboard-row" key={teamItem.id}>
-                    <span className="leaderboard-rank">{index + 1}</span>
-                    <div className="leaderboard-info">
-                      <div>
-                        <strong>
-                          {teamItem.name}
-                          {teamItem.id === currentTeamId ? " · Regumu" : ""}
-                        </strong>
-                        <span>{teamItem.total} poin</span>
-                      </div>
-                      <div className="leaderboard-track">
-                        <span
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              Math.round(
-                                (teamItem.total /
-                                  Math.max(sortedTeams[0]?.total ?? 1, 1)) *
-                                  100,
-                              ),
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <Flag aria-hidden="true" />
-                <strong>Papan skor belum dibuka</strong>
-                <p>Operator akan merilis peringkat setelah peninjauan nilai.</p>
-              </div>
-            )}
-          </section>
-
-          <section className="panel panel-pad">
-            <SectionHeading
-              title="Data regu"
-              action={
-                <Link className="text-link" href="/dashboard/submit/pionering">
-                  Lihat tugas <ChevronRight aria-hidden="true" />
-                </Link>
-              }
-            />
-            <div className="activity-list">
-              <div className="activity-row">
-                <span className="activity-copy">
-                  <strong>Nama regu</strong>
-                  <span>{team?.name ?? "Belum dipetakan"}</span>
-                </span>
-                <ShieldCheck size={18} aria-hidden="true" />
-              </div>
-              <div className="activity-row">
-                <span className="activity-copy">
-                  <strong>Pangkalan</strong>
-                  <span>{school?.name ?? "Belum dipetakan"}</span>
-                </span>
-                <Landmark size={18} aria-hidden="true" />
-              </div>
-              <div className="activity-row">
-                <span className="activity-copy">
-                  <strong>Ketua regu</strong>
-                  <span>
-                    {data.participants.find(
-                      (person) =>
-                        person.teamId === currentTeamId && person.isPinru,
-                    )?.name ?? "Belum ditentukan"}
-                  </span>
-                </span>
-                <Users size={18} aria-hidden="true" />
-              </div>
-            </div>
           </section>
           <button
             className="button button-secondary wide-primary"

@@ -1318,6 +1318,10 @@ textarea:focus-visible {
   margin-top: var(--gap);
 }
 
+.dashboard-grid.participant-dashboard-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .dashboard-column {
   display: grid;
   align-content: start;
