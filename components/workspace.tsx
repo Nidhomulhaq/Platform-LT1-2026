@@ -1486,6 +1486,9 @@ function AccountProfile({ notify }: { notify: Notify }) {
   const name = profile?.full_name ?? participant?.name ?? "";
   const [fullName, setFullName] = React.useState(name);
   const [loginId, setLoginId] = React.useState("");
+  const [schoolId, setSchoolId] = React.useState(
+    profile?.school_id ?? participant?.schoolId ?? "",
+  );
   const [placeOfBirth, setPlaceOfBirth] = React.useState("");
   const [dateOfBirth, setDateOfBirth] = React.useState("");
   const [phoneNumber, setPhoneNumber] = React.useState("");
@@ -1539,12 +1542,15 @@ function AccountProfile({ notify }: { notify: Notify }) {
           typeof account.place_of_birth !== "string" ||
           (typeof account.date_of_birth !== "string" &&
             account.date_of_birth !== null) ||
-          typeof account.motto !== "string"
+          typeof account.motto !== "string" ||
+          (typeof account.school_id !== "string" &&
+            account.school_id !== null)
         ) {
           throw new Error("Data profil akun tidak valid.");
         }
         setFullName(account.full_name);
         setLoginId(account.login_id ?? "");
+        setSchoolId(account.school_id ?? "");
         setPlaceOfBirth(account.place_of_birth);
         setDateOfBirth(account.date_of_birth ?? "");
         setPhoneNumber(account.phone_number ?? "");
@@ -1578,6 +1584,7 @@ function AccountProfile({ notify }: { notify: Notify }) {
           dateOfBirth,
           phoneNumber,
           motto,
+          ...(profile?.role === "peserta" ? { schoolId } : {}),
         }),
       });
       const result: unknown = await response.json();
@@ -1689,6 +1696,30 @@ function AccountProfile({ notify }: { notify: Notify }) {
             </p>
           ) : null}
           <form className="form-stack account-profile-form" onSubmit={saveProfile}>
+            {profile?.role === "peserta" ? (
+              <label>
+                <span className="field-label">Pangkalan</span>
+                <select
+                  className="field"
+                  disabled={data.schools.length === 0}
+                  required
+                  value={schoolId}
+                  onChange={(event) => setSchoolId(event.target.value)}
+                >
+                  <option value="">Pilih pangkalan</option>
+                  {data.schools.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+                {data.schools.length === 0 ? (
+                  <span className="field-hint">
+                    Belum ada pangkalan yang tersedia. Hubungi Operator.
+                  </span>
+                ) : null}
+              </label>
+            ) : null}
             <div className="form-row">
               <label>
                 <span className="field-label">Nama lengkap</span>

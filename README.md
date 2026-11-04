@@ -96,6 +96,10 @@ akun dan tetapkan satu regu melalui `/operator/accounts`. Pendamping masuk ke
 dan kata sandi sementara yang dihasilkan sistem melalui kanal privat. Pendaftaran
 peserta menggunakan secret Supabase privat pada environment server.
 
+Peserta dapat memilih atau memperbarui pangkalannya sendiri melalui menu
+`/profile`. Pilihan hanya tersedia dari daftar pangkalan yang dikelola Operator;
+perubahan tidak mengubah keanggotaan regu.
+
 Supabase wajib dikonfigurasi untuk membuka aplikasi. Tanpa URL dan publishable
 key, semua halaman kegiatan terkunci dan data demo tidak dimuat. Rute `/register`
 selalu dialihkan ke halaman login; akun hanya dibuat oleh pengelola. Key lama

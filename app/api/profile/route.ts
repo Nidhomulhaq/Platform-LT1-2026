@@ -14,6 +14,7 @@ type ProfileChanges = {
   place_of_birth: string;
   date_of_birth: string | null;
   motto: string;
+  school_id?: string;
 };
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
@@ -25,6 +26,15 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
 }
 
 function sameOrigin(request: NextRequest) {
@@ -52,7 +62,8 @@ function parseProfileChanges(value: unknown): ProfileChanges | null {
     typeof value.phoneNumber !== "string" ||
     typeof value.placeOfBirth !== "string" ||
     typeof value.dateOfBirth !== "string" ||
-    typeof value.motto !== "string"
+    typeof value.motto !== "string" ||
+    (value.schoolId !== undefined && !isUuid(value.schoolId))
   ) {
     return null;
   }
@@ -82,6 +93,9 @@ function parseProfileChanges(value: unknown): ProfileChanges | null {
     place_of_birth: placeOfBirth,
     date_of_birth: dateOfBirth || null,
     motto,
+    ...(typeof value.schoolId === "string"
+      ? { school_id: value.schoolId }
+      : {}),
   };
 }
 
@@ -115,7 +129,7 @@ export async function GET() {
 
   const profileQuery = new URLSearchParams({
     select:
-      "full_name,login_id,phone_number,place_of_birth,date_of_birth,motto,role",
+      "full_name,login_id,phone_number,place_of_birth,date_of_birth,motto,role,school_id,is_active",
     id: `eq.${user.id}`,
   });
   try {
@@ -137,6 +151,8 @@ export async function GET() {
       (typeof profile.date_of_birth !== "string" &&
         profile.date_of_birth !== null) ||
       typeof profile.motto !== "string" ||
+      (typeof profile.school_id !== "string" && profile.school_id !== null) ||
+      typeof profile.is_active !== "boolean" ||
       (profile.role !== "operator" &&
         profile.role !== "panitia" &&
         profile.role !== "juri" &&
@@ -206,7 +222,7 @@ export async function POST(request: NextRequest) {
 
   const profileQuery = new URLSearchParams({
     select:
-      "full_name,login_id,phone_number,place_of_birth,date_of_birth,motto",
+      "full_name,login_id,phone_number,place_of_birth,date_of_birth,motto,role,school_id,is_active",
     id: `eq.${user.id}`,
   });
 
@@ -230,9 +246,49 @@ export async function POST(request: NextRequest) {
       typeof currentProfile.place_of_birth !== "string" ||
       (typeof currentProfile.date_of_birth !== "string" &&
         currentProfile.date_of_birth !== null) ||
-      typeof currentProfile.motto !== "string"
+      typeof currentProfile.motto !== "string" ||
+      (typeof currentProfile.school_id !== "string" &&
+        currentProfile.school_id !== null) ||
+      typeof currentProfile.is_active !== "boolean" ||
+      (currentProfile.role !== "operator" &&
+        currentProfile.role !== "panitia" &&
+        currentProfile.role !== "juri" &&
+        currentProfile.role !== "peserta" &&
+        currentProfile.role !== "pendamping_regu")
     ) {
       return jsonResponse({ error: "Data profil akun tidak valid." }, 500);
+    }
+    if (!currentProfile.is_active) {
+      return jsonResponse({ error: "Akun ini sedang dinonaktifkan." }, 403);
+    }
+
+    if (currentProfile.role === "peserta") {
+      if (!changes.school_id) {
+        return jsonResponse(
+          { error: "Pilih pangkalan untuk profil Anda." },
+          400,
+        );
+      }
+      const schoolQuery = new URLSearchParams({
+        select: "id",
+        id: `eq.${changes.school_id}`,
+      });
+      const schools = await adminRequest(
+        projectUrl,
+        `/rest/v1/schools?${schoolQuery}`,
+        "GET",
+      );
+      if (!Array.isArray(schools) || schools.length !== 1) {
+        return jsonResponse(
+          { error: "Pangkalan yang dipilih tidak ditemukan." },
+          400,
+        );
+      }
+    } else if (changes.school_id !== undefined) {
+      return jsonResponse(
+        { error: "Hanya peserta yang dapat mengubah pangkalan pada profil." },
+        403,
+      );
     }
 
     const loginChanged = currentProfile.login_id !== changes.login_id;
@@ -286,6 +342,7 @@ export async function POST(request: NextRequest) {
           place_of_birth: currentProfile.place_of_birth,
           date_of_birth: currentProfile.date_of_birth,
           motto: currentProfile.motto,
+          school_id: currentProfile.school_id,
         };
         try {
           await adminRequest(
