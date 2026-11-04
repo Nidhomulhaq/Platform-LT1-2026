@@ -5419,6 +5419,11 @@ function TeamManagement({ notify }: { notify: Notify }) {
   const [creatingParticipant, setCreatingParticipant] = React.useState(false);
   const [temporaryPassword, setTemporaryPassword] = React.useState("");
   const [search, setSearch] = React.useState("");
+  const [listView, setListView] = React.useState<"teams" | "participants">(
+    "teams",
+  );
+  const [participantTeamFilter, setParticipantTeamFilter] =
+    React.useState("all");
   const [editingTeamId, setEditingTeamId] = React.useState<string | null>(null);
   const [editingTeamName, setEditingTeamName] = React.useState("");
   const [teamActionId, setTeamActionId] = React.useState<string | null>(null);
@@ -5434,6 +5439,15 @@ function TeamManagement({ notify }: { notify: Notify }) {
   }, [data.teams, targetTeam]);
   React.useEffect(() => {
     if (
+      participantTeamFilter !== "all" &&
+      participantTeamFilter !== "unassigned" &&
+      !data.teams.some((team) => team.id === participantTeamFilter)
+    ) {
+      setParticipantTeamFilter("all");
+    }
+  }, [data.teams, participantTeamFilter]);
+  React.useEffect(() => {
+    if (
       !data.schools.some((school) => school.id === newParticipantSchool) &&
       data.schools.length
     ) {
@@ -5443,9 +5457,13 @@ function TeamManagement({ notify }: { notify: Notify }) {
   const visibleParticipants = data.participants.filter((participant) => {
     const team = getTeam(data, participant.teamId);
     const school = data.schools.find((item) => item.id === participant.schoolId);
+    const matchesTeam =
+      participantTeamFilter === "all" ||
+      (participantTeamFilter === "unassigned" && !participant.teamId) ||
+      participant.teamId === participantTeamFilter;
     return `${participant.name} ${team?.name ?? ""} ${school?.name ?? ""}`
       .toLowerCase()
-      .includes(search.toLowerCase());
+      .includes(search.toLowerCase()) && matchesTeam;
   });
   const allVisibleSelected =
     visibleParticipants.length > 0 &&
@@ -5637,33 +5655,6 @@ function TeamManagement({ notify }: { notify: Notify }) {
       <PageHeading
         title="Regu & peserta"
         description="Kelola regu dan peserta. Pangkalan dicatat pada profil peserta."
-        actions={
-          <>
-            <label className="sr-only" htmlFor="target-team">
-              Regu tujuan
-            </label>
-            <select
-              id="target-team"
-              className="filter-select"
-              value={targetTeam}
-              disabled={!data.teams.length}
-              onChange={(event) => setTargetTeam(event.target.value)}
-            >
-              {data.teams.map((team) => (
-                <option value={team.id} key={team.id}>
-                  Regu {team.name}
-                </option>
-              ))}
-            </select>
-            <button
-              className="button button-small"
-              disabled={!selectedIds.length || !data.teams.length}
-              onClick={() => void assign()}
-            >
-              Petakan {selectedIds.length || ""}
-            </button>
-          </>
-        }
       />
       <section className="panel panel-pad" style={{ marginBottom: 18 }}>
         <SectionHeading
@@ -5822,242 +5813,323 @@ function TeamManagement({ notify }: { notify: Notify }) {
         )}
       </section>
       <section className="panel panel-pad" style={{ marginBottom: 18 }}>
-        <SectionHeading
-          title="Daftar regu"
-          detail={`${data.teams.length} regu terdaftar`}
-        />
-        {!data.teams.length ? (
-          <div className="empty-state">
-            <Users aria-hidden="true" />
-            <strong>Belum ada regu</strong>
-            <p>Tambahkan regu terlebih dahulu untuk memetakan peserta.</p>
-          </div>
-        ) : (
-          <div className="activity-list">
-            {data.teams.map((team) => {
-              const memberCount = data.participants.filter(
-                (person) => person.teamId === team.id,
-              ).length;
-              const isEditing = editingTeamId === team.id;
-              const isBusy = teamActionId === team.id;
-              return (
-                <div className="activity-row" key={team.id}>
-                  <span className="activity-copy">
-                    <strong>Regu {team.name}</strong>
-                    <span>
-                      {team.category} · {memberCount} peserta
-                    </span>
-                  </span>
-                  {isEditing ? (
-                    <form
-                      className="team-members-inline"
-                      onSubmit={(event) => void saveTeamName(event)}
-                    >
-                      <label className="sr-only" htmlFor={`team-name-${team.id}`}>
-                        Nama regu {team.name}
-                      </label>
-                      <input
-                        id={`team-name-${team.id}`}
-                        className="field"
-                        value={editingTeamName}
-                        onChange={(event) =>
-                          setEditingTeamName(event.target.value)
-                        }
-                        maxLength={100}
-                        required
-                      />
-                      <button
-                        className="button button-small"
-                        type="submit"
-                        disabled={isBusy || !editingTeamName.trim()}
-                      >
-                        {isBusy ? "Menyimpan…" : "Simpan"}
-                      </button>
-                      <button
-                        className="button button-secondary button-small"
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => {
-                          setEditingTeamId(null);
-                          setEditingTeamName("");
-                        }}
-                      >
-                        Batal
-                      </button>
-                    </form>
-                  ) : (
-                    <div className="team-members-inline">
-                      <button
-                        className="button button-secondary button-small"
-                        type="button"
-                        disabled={teamActionId !== null}
-                        onClick={() => {
-                          setEditingTeamId(team.id);
-                          setEditingTeamName(team.name);
-                        }}
-                      >
-                        Edit nama
-                      </button>
-                      <button
-                        className="button button-secondary button-small"
-                        type="button"
-                        disabled={teamActionId !== null}
-                        onClick={() => void removeTeam(team)}
-                      >
-                        Hapus
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-      <div className="filter-row">
-        <div className="search-control">
-          <Search aria-hidden="true" />
-          <label className="sr-only" htmlFor="participant-search">
-            Cari peserta, regu, atau pangkalan
+        <div className="filter-row">
+          <label className="field-label" htmlFor="team-management-view">
+            Tampilkan daftar
           </label>
-          <input
-            id="participant-search"
-            className="field"
-            value={search}
-            placeholder="Cari nama peserta atau regu"
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <select
+            id="team-management-view"
+            className="filter-select"
+            value={listView}
+            onChange={(event) =>
+              setListView(event.target.value as "teams" | "participants")
+            }
+          >
+            <option value="teams">Daftar regu</option>
+            <option value="participants">Daftar peserta</option>
+          </select>
         </div>
-        <span className="role-chip">{visibleParticipants.length} peserta</span>
-      </div>
-      <section className="panel panel-pad">
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="check-cell">
-                  <input
-                    className="member-select"
-                    type="checkbox"
-                    aria-label="Pilih semua peserta yang terlihat"
-                    checked={allVisibleSelected}
-                    onChange={toggleVisible}
-                  />
-                </th>
-                <th>Peserta</th>
-                <th>Regu saat ini</th>
-                <th>Pangkalan</th>
-                <th>Peran</th>
-                <th>Pinru</th>
-                <th>Pindahkan regu</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleParticipants.map((person) => {
-                const team = getTeam(data, person.teamId);
-                const school = data.schools.find(
-                  (item) => item.id === person.schoolId,
-                );
-                return (
-                  <tr key={person.id}>
-                    <td>
+        {listView === "teams" ? (
+          <>
+            <SectionHeading
+              title="Daftar regu"
+              detail={`${data.teams.length} regu terdaftar`}
+            />
+            {!data.teams.length ? (
+              <div className="empty-state">
+                <Users aria-hidden="true" />
+                <strong>Belum ada regu</strong>
+                <p>Tambahkan regu terlebih dahulu untuk memetakan peserta.</p>
+              </div>
+            ) : (
+              <div className="activity-list">
+                {data.teams.map((team) => {
+                  const memberCount = data.participants.filter(
+                    (person) => person.teamId === team.id,
+                  ).length;
+                  const isEditing = editingTeamId === team.id;
+                  const isBusy = teamActionId === team.id;
+                  return (
+                    <div className="activity-row" key={team.id}>
+                      <span className="activity-copy">
+                        <strong>Regu {team.name}</strong>
+                        <span>
+                          {team.category} · {memberCount} peserta
+                        </span>
+                      </span>
+                      {isEditing ? (
+                        <form
+                          className="team-members-inline"
+                          onSubmit={(event) => void saveTeamName(event)}
+                        >
+                          <label
+                            className="sr-only"
+                            htmlFor={`team-name-${team.id}`}
+                          >
+                            Nama regu {team.name}
+                          </label>
+                          <input
+                            id={`team-name-${team.id}`}
+                            className="field"
+                            value={editingTeamName}
+                            onChange={(event) =>
+                              setEditingTeamName(event.target.value)
+                            }
+                            maxLength={100}
+                            required
+                          />
+                          <button
+                            className="button button-small"
+                            type="submit"
+                            disabled={isBusy || !editingTeamName.trim()}
+                          >
+                            {isBusy ? "Menyimpan…" : "Simpan"}
+                          </button>
+                          <button
+                            className="button button-secondary button-small"
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => {
+                              setEditingTeamId(null);
+                              setEditingTeamName("");
+                            }}
+                          >
+                            Batal
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="team-members-inline">
+                          <button
+                            className="button button-secondary button-small"
+                            type="button"
+                            disabled={teamActionId !== null}
+                            onClick={() => {
+                              setEditingTeamId(team.id);
+                              setEditingTeamName(team.name);
+                            }}
+                          >
+                            Edit nama
+                          </button>
+                          <button
+                            className="button button-secondary button-small"
+                            type="button"
+                            disabled={teamActionId !== null}
+                            onClick={() => void removeTeam(team)}
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="filter-row">
+              <label className="field-label" htmlFor="participant-team-filter">
+                Peserta dari regu
+              </label>
+              <select
+                id="participant-team-filter"
+                className="filter-select"
+                value={participantTeamFilter}
+                onChange={(event) => setParticipantTeamFilter(event.target.value)}
+              >
+                <option value="all">Semua regu</option>
+                <option value="unassigned">Belum dipetakan</option>
+                {data.teams.map((team) => (
+                  <option value={team.id} key={team.id}>
+                    Regu {team.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="filter-row">
+              <div className="search-control">
+                <Search aria-hidden="true" />
+                <label className="sr-only" htmlFor="participant-search">
+                  Cari peserta atau pangkalan
+                </label>
+                <input
+                  id="participant-search"
+                  className="field"
+                  value={search}
+                  placeholder="Cari nama peserta atau pangkalan"
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+              <span className="role-chip">
+                {visibleParticipants.length} peserta
+              </span>
+            </div>
+            <div className="filter-row">
+              <label className="sr-only" htmlFor="target-team">
+                Regu tujuan pemetaan
+              </label>
+              <select
+                id="target-team"
+                className="filter-select"
+                value={targetTeam}
+                disabled={!data.teams.length}
+                onChange={(event) => setTargetTeam(event.target.value)}
+              >
+                {data.teams.map((team) => (
+                  <option value={team.id} key={team.id}>
+                    Regu {team.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="button button-small"
+                disabled={!selectedIds.length || !data.teams.length}
+                onClick={() => void assign()}
+              >
+                Petakan {selectedIds.length || ""}
+              </button>
+            </div>
+            {!visibleParticipants.length ? (
+              <div className="empty-state">
+                <Search aria-hidden="true" />
+                <strong>Tidak ada peserta pada pilihan ini</strong>
+                <p>Ubah filter regu atau kata kunci pencarian.</p>
+              </div>
+            ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="check-cell">
                       <input
                         className="member-select"
                         type="checkbox"
-                        aria-label={`Pilih ${person.name}`}
-                        checked={selectedIds.includes(person.id)}
-                        onChange={() => togglePerson(person.id)}
+                        aria-label="Pilih semua peserta yang terlihat"
+                        checked={allVisibleSelected}
+                        onChange={toggleVisible}
                       />
-                    </td>
-                    <td>
-                      <span className="table-primary">{person.name}</span>
-                      <span className="table-secondary">{person.id}</span>
-                    </td>
-                    <td>{team?.name ?? "Belum dipetakan"}</td>
-                    <td>{school?.name ?? "Belum dipetakan"}</td>
-                    <td>
-                      <span className="role-chip">
-                        {person.isPinru ? "Pinru" : team ? "Anggota" : "—"}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        className="button button-secondary button-small"
-                        type="button"
-                        disabled={!team || person.isPinru}
-                        onClick={() => {
-                          if (!team) return;
-                          void setTeamPinru(person.id, team.id)
-                            .then(() =>
-                              notify(`${person.name} ditetapkan sebagai Pinru.`),
-                            )
-                            .catch((error: unknown) => {
-                              console.error("Gagal menetapkan Pinru.", error);
-                              notify(
-                                "Pinru gagal diperbarui. Pastikan peserta anggota regu yang dipilih.",
-                                true,
-                              );
-                            });
-                        }}
-                      >
-                        {person.isPinru ? "Pinru saat ini" : "Jadikan Pinru"}
-                      </button>
-                    </td>
-                    <td>
-                      <div className="team-members-inline">
-                        <label
-                          className="sr-only"
-                          htmlFor={`participant-team-${person.id}`}
-                        >
-                          Regu tujuan untuk {person.name}
-                        </label>
-                        <select
-                          id={`participant-team-${person.id}`}
-                          className="filter-select"
-                          value={
-                            participantTeamSelections[person.id] ??
-                            person.teamId
-                          }
-                          disabled={!data.teams.length || movingParticipantId === person.id}
-                          onChange={(event) =>
-                            setParticipantTeamSelections((selections) => ({
-                              ...selections,
-                              [person.id]: event.target.value,
-                            }))
-                          }
-                        >
-                          {!person.teamId ? (
-                            <option value="">Pilih regu</option>
-                          ) : null}
-                          {data.teams.map((option) => (
-                            <option value={option.id} key={option.id}>
-                              {option.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          className="button button-secondary button-small"
-                          type="button"
-                          disabled={
-                            movingParticipantId !== null ||
-                            !participantTeamSelections[person.id] ||
-                            (participantTeamSelections[person.id] ??
-                              person.teamId) === person.teamId
-                          }
-                          onClick={() => void moveParticipant(person)}
-                        >
-                          {movingParticipantId === person.id
-                            ? "Memindahkan…"
-                            : "Pindahkan"}
-                        </button>
-                      </div>
-                    </td>
+                    </th>
+                    <th>Peserta</th>
+                    <th>Regu saat ini</th>
+                    <th>Pangkalan</th>
+                    <th>Peran</th>
+                    <th>Pinru</th>
+                    <th>Pindahkan regu</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {visibleParticipants.map((person) => {
+                    const team = getTeam(data, person.teamId);
+                    const school = data.schools.find(
+                      (item) => item.id === person.schoolId,
+                    );
+                    return (
+                      <tr key={person.id}>
+                        <td>
+                          <input
+                            className="member-select"
+                            type="checkbox"
+                            aria-label={`Pilih ${person.name}`}
+                            checked={selectedIds.includes(person.id)}
+                            onChange={() => togglePerson(person.id)}
+                          />
+                        </td>
+                        <td>
+                          <span className="table-primary">{person.name}</span>
+                          <span className="table-secondary">{person.id}</span>
+                        </td>
+                        <td>{team?.name ?? "Belum dipetakan"}</td>
+                        <td>{school?.name ?? "Belum dipetakan"}</td>
+                        <td>
+                          <span className="role-chip">
+                            {person.isPinru ? "Pinru" : team ? "Anggota" : "—"}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="button button-secondary button-small"
+                            type="button"
+                            disabled={!team || person.isPinru}
+                            onClick={() => {
+                              if (!team) return;
+                              void setTeamPinru(person.id, team.id)
+                                .then(() =>
+                                  notify(`${person.name} ditetapkan sebagai Pinru.`),
+                                )
+                                .catch((error: unknown) => {
+                                  console.error("Gagal menetapkan Pinru.", error);
+                                  notify(
+                                    "Pinru gagal diperbarui. Pastikan peserta anggota regu yang dipilih.",
+                                    true,
+                                  );
+                                });
+                            }}
+                          >
+                            {person.isPinru ? "Pinru saat ini" : "Jadikan Pinru"}
+                          </button>
+                        </td>
+                        <td>
+                          <div className="team-members-inline">
+                            <label
+                              className="sr-only"
+                              htmlFor={`participant-team-${person.id}`}
+                            >
+                              Regu tujuan untuk {person.name}
+                            </label>
+                            <select
+                              id={`participant-team-${person.id}`}
+                              className="filter-select"
+                              value={
+                                participantTeamSelections[person.id] ??
+                                person.teamId
+                              }
+                              disabled={
+                                !data.teams.length ||
+                                movingParticipantId === person.id
+                              }
+                              onChange={(event) =>
+                                setParticipantTeamSelections((selections) => ({
+                                  ...selections,
+                                  [person.id]: event.target.value,
+                                }))
+                              }
+                            >
+                              {!person.teamId ? (
+                                <option value="">Pilih regu</option>
+                              ) : null}
+                              {data.teams.map((option) => (
+                                <option value={option.id} key={option.id}>
+                                  {option.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              className="button button-secondary button-small"
+                              type="button"
+                              disabled={
+                                movingParticipantId !== null ||
+                                !participantTeamSelections[person.id] ||
+                                (participantTeamSelections[person.id] ??
+                                  person.teamId) === person.teamId
+                              }
+                              onClick={() => void moveParticipant(person)}
+                            >
+                              {movingParticipantId === person.id
+                                ? "Memindahkan…"
+                                : "Pindahkan"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            )}
+          </>
+        )}
       </section>
     </>
   );
