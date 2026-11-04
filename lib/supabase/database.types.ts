@@ -145,6 +145,10 @@ export type Database = {
         Args: { should_publish: boolean };
         Returns: string | null;
       };
+      set_leaderboard_published: {
+        Args: { should_publish: boolean };
+        Returns: string;
+      };
       set_competition_active: {
         Args: { target_competition_id: string; should_be_active: boolean };
         Returns: undefined;

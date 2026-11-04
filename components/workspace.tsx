@@ -5233,18 +5233,58 @@ function PanitiaAssignmentManagement({ notify }: { notify: Notify }) {
 function PublicationSettings({ notify }: { notify: Notify }) {
   const {
     data,
+    isConnected,
     setLeaderboardPublished,
     setCertificatesPublished,
   } = useWorkspace();
-  const allApproved =
-    data.teams.length > 0 &&
-    data.competitions.length > 0 &&
-    data.teams.every((team) =>
-      data.competitions.every(
+  const expectedScoreCount = data.teams.length * data.competitions.length;
+  const approvedScoreCount = data.teams.reduce(
+    (total, team) =>
+      total +
+      data.competitions.filter(
         (competition) =>
           getScore(data.scores, team.id, competition.id)?.status === "approved",
-      ),
-    );
+      ).length,
+    0,
+  );
+  const allApproved =
+    expectedScoreCount > 0 && approvedScoreCount === expectedScoreCount;
+  const [savingPublication, setSavingPublication] = React.useState<
+    "leaderboard" | "certificates" | null
+  >(null);
+
+  const saveLeaderboard = async () => {
+    setSavingPublication("leaderboard");
+    try {
+      await setLeaderboardPublished(!data.leaderboardPublished);
+      notify("Pengaturan leaderboard berhasil disimpan.");
+    } catch (error) {
+      console.error("Gagal mengubah publikasi leaderboard.", error);
+      notify("Pengaturan leaderboard gagal disimpan. Coba lagi.", true);
+    } finally {
+      setSavingPublication(null);
+    }
+  };
+
+  const saveCertificates = async () => {
+    setSavingPublication("certificates");
+    try {
+      await setCertificatesPublished(!data.certificatesPublished);
+      notify("Pengaturan sertifikat berhasil disimpan.");
+    } catch (error) {
+      console.error("Gagal mengubah publikasi sertifikat.", error);
+      notify(
+        error instanceof Error &&
+          error.message.includes("All team scores must be approved")
+          ? "Sertifikat belum dapat dibuka. Sahkan nilai seluruh regu dan mata lomba terlebih dahulu."
+          : "Pengaturan sertifikat gagal disimpan. Coba lagi.",
+        true,
+      );
+    } finally {
+      setSavingPublication(null);
+    }
+  };
+
   return (
     <>
       <PageHeading
@@ -5269,14 +5309,8 @@ function PublicationSettings({ notify }: { notify: Notify }) {
             <SwitchControl
               checked={data.leaderboardPublished}
               label="Rilis papan skor publik"
-              onChange={() => {
-                void setLeaderboardPublished(!data.leaderboardPublished)
-                  .then(() => notify("Pengaturan leaderboard berhasil disimpan."))
-                  .catch((error: unknown) => {
-                    console.error("Gagal mengubah publikasi leaderboard.", error);
-                    notify("Pengaturan leaderboard gagal disimpan.", true);
-                  });
-              }}
+              disabled={savingPublication !== null}
+              onChange={() => void saveLeaderboard()}
             />
           </div>
           <div className="toggle-row">
@@ -5291,17 +5325,20 @@ function PublicationSettings({ notify }: { notify: Notify }) {
             <SwitchControl
               checked={data.certificatesPublished}
               label="Buka unduhan sertifikat"
-              disabled={!allApproved && !data.certificatesPublished}
-              onChange={() => {
-                void setCertificatesPublished(!data.certificatesPublished)
-                  .then(() => notify("Pengaturan sertifikat berhasil disimpan."))
-                  .catch((error: unknown) => {
-                    console.error("Gagal mengubah publikasi sertifikat.", error);
-                    notify("Pengaturan sertifikat gagal disimpan.", true);
-                  });
-              }}
+              disabled={
+                savingPublication !== null ||
+                (!allApproved && !data.certificatesPublished)
+              }
+              onChange={() => void saveCertificates()}
             />
           </div>
+          {!data.certificatesPublished ? (
+            <p className="field-hint" role="status">
+              {expectedScoreCount === 0
+                ? "Tambahkan minimal satu regu dan satu mata lomba sebelum menerbitkan sertifikat."
+                : `Nilai disahkan ${approvedScoreCount} dari ${expectedScoreCount}. Sertifikat aktif setelah semua kombinasi regu dan mata lomba disahkan.`}
+            </p>
+          ) : null}
         </section>
         <section className="panel panel-pad">
           <SectionHeading title="Status verifikasi" />
@@ -5347,8 +5384,9 @@ function PublicationSettings({ notify }: { notify: Notify }) {
       <div className="notice" style={{ marginTop: 18 }} role="note">
         <CircleHelp aria-hidden="true" />
         <p>
-          Penerbitan pada demo ini hanya mengubah status di peramban. Tautan
-          verifikasi belum menggunakan Supabase atau tanda tangan elektronik.
+          {isConnected
+            ? "Perubahan tersimpan di Supabase. Tanda tangan digital dan verifikasi kriptografis belum diaktifkan."
+            : "Mode data contoh: perubahan hanya berlaku di peramban ini dan tidak dipublikasikan ke peserta."}
         </p>
       </div>
     </>

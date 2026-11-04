@@ -1379,11 +1379,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       setLeaderboardPublished: async (published) => {
         if (supabase) {
-          const { error } = await supabase
-            .from("event_settings")
-            .update({ leaderboard_published: published })
-            .eq("id", true);
+          const { data: savedAt, error } = await supabase.rpc(
+            "set_leaderboard_published",
+            { should_publish: published },
+          );
           if (error) throw error;
+          if (!savedAt) {
+            throw new Error("Pengaturan papan skor tidak berhasil dikonfirmasi.");
+          }
         }
         setData((current) => ({ ...current, leaderboardPublished: published }));
       },
