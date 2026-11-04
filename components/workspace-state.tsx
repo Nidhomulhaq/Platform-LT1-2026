@@ -710,6 +710,8 @@ interface WorkspaceContextValue {
     school: Omit<School, "id">,
   ) => Promise<void>;
   createTeam: (team: Omit<Team, "id">) => Promise<void>;
+  updateTeam: (teamId: string, name: string) => Promise<void>;
+  deleteTeam: (teamId: string) => Promise<void>;
   createCompetition: (competition: Competition) => Promise<void>;
   updateCompetition: (
     competitionId: string,
@@ -964,6 +966,54 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setData((current) => ({
           ...current,
           teams: [...current.teams, nextTeam],
+        }));
+      },
+      updateTeam: async (teamId, name) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("teams")
+            .update({ name })
+            .eq("id", teamId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          teams: current.teams.map((team) =>
+            team.id === teamId ? { ...team, name } : team,
+          ),
+        }));
+      },
+      deleteTeam: async (teamId) => {
+        if (supabase) {
+          const { error } = await supabase
+            .from("teams")
+            .delete()
+            .eq("id", teamId)
+            .select("id")
+            .single();
+          if (error) throw error;
+        }
+        setData((current) => ({
+          ...current,
+          teams: current.teams.filter((team) => team.id !== teamId),
+          participants: current.participants.map((participant) =>
+            participant.teamId === teamId
+              ? { ...participant, teamId: "", isPinru: false }
+              : participant,
+          ),
+          scores: current.scores.filter((score) => score.teamId !== teamId),
+          submissions: Object.fromEntries(
+            Object.entries(current.submissions).filter(
+              ([key]) => !key.startsWith(`${teamId}:`),
+            ),
+          ),
+          attendance: Object.fromEntries(
+            Object.entries(current.attendance).filter(
+              ([key]) => !key.startsWith(`${teamId}:`),
+            ),
+          ),
         }));
       },
       createCompetition: async (competition) => {
@@ -1272,9 +1322,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const memberships = participantIds.map((userId) => ({
             user_id: userId,
             team_id: teamId,
-            is_pinru:
-              data.participants.find((person) => person.id === userId)?.isPinru ??
-              false,
+            is_pinru: data.participants.some(
+              (person) =>
+                person.id === userId &&
+                person.teamId === teamId &&
+                person.isPinru,
+            ),
           }));
           const { error } = await supabase
             .from("team_members")
@@ -1285,7 +1338,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...current,
           participants: current.participants.map((participant) =>
             participantIds.includes(participant.id)
-              ? { ...participant, teamId }
+              ? {
+                  ...participant,
+                  teamId,
+                  isPinru:
+                    participant.teamId === teamId && participant.isPinru,
+                }
               : participant,
           ),
         }));

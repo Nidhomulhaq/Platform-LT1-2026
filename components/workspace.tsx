@@ -5398,9 +5398,11 @@ function TeamManagement({ notify }: { notify: Notify }) {
     data,
     assignParticipants,
     createTeam,
+    deleteTeam,
     isConnected,
     refreshWorkspace,
     setTeamPinru,
+    updateTeam,
   } = useWorkspace();
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [targetTeam, setTargetTeam] = React.useState(data.teams[0]?.id ?? "");
@@ -5417,6 +5419,14 @@ function TeamManagement({ notify }: { notify: Notify }) {
   const [creatingParticipant, setCreatingParticipant] = React.useState(false);
   const [temporaryPassword, setTemporaryPassword] = React.useState("");
   const [search, setSearch] = React.useState("");
+  const [editingTeamId, setEditingTeamId] = React.useState<string | null>(null);
+  const [editingTeamName, setEditingTeamName] = React.useState("");
+  const [teamActionId, setTeamActionId] = React.useState<string | null>(null);
+  const [participantTeamSelections, setParticipantTeamSelections] =
+    React.useState<Record<string, string>>({});
+  const [movingParticipantId, setMovingParticipantId] = React.useState<
+    string | null
+  >(null);
   React.useEffect(() => {
     if (!data.teams.some((team) => team.id === targetTeam)) {
       setTargetTeam(data.teams[0]?.id ?? "");
@@ -5440,6 +5450,91 @@ function TeamManagement({ notify }: { notify: Notify }) {
   const allVisibleSelected =
     visibleParticipants.length > 0 &&
     visibleParticipants.every((person) => selectedIds.includes(person.id));
+
+  const saveTeamName = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingTeamId || !editingTeamName.trim()) return;
+    setTeamActionId(editingTeamId);
+    try {
+      await updateTeam(editingTeamId, editingTeamName.trim());
+      notify("Nama regu berhasil diperbarui.");
+      setEditingTeamId(null);
+      setEditingTeamName("");
+    } catch (error) {
+      console.error("Gagal memperbarui nama regu.", error);
+      notify("Nama regu gagal diperbarui. Periksa apakah nama sudah digunakan.", true);
+    } finally {
+      setTeamActionId(null);
+    }
+  };
+
+  const removeTeam = async (team: Team) => {
+    if (data.certificatesPublished) {
+      notify(
+        "Tutup akses sertifikat terlebih dahulu sebelum menghapus regu yang sudah masuk rekap.",
+        true,
+      );
+      return;
+    }
+    const memberIds = data.participants
+      .filter((person) => person.teamId === team.id)
+      .map((person) => person.id);
+    const scoreCount = data.scores.filter((score) => score.teamId === team.id).length;
+    const submissionCount = Object.keys(data.submissions).filter((key) =>
+      key.startsWith(`${team.id}:`),
+    ).length;
+    const attendanceCount = Object.keys(data.attendance).filter((key) =>
+      key.startsWith(`${team.id}:`),
+    ).length;
+    const hasRelatedData =
+      memberIds.length + scoreCount + submissionCount + attendanceCount > 0;
+    const confirmation = hasRelatedData
+      ? `Hapus Regu ${team.name}? ${memberIds.length} peserta akan menjadi belum dipetakan. ${scoreCount} nilai, ${submissionCount} kiriman tugas, dan ${attendanceCount} catatan kehadiran terkait juga akan dihapus permanen.`
+      : `Hapus Regu ${team.name}? Tindakan ini tidak dapat dibatalkan.`;
+    if (!window.confirm(confirmation)) return;
+
+    setTeamActionId(team.id);
+    try {
+      await deleteTeam(team.id);
+      setSelectedIds((ids) => ids.filter((id) => !memberIds.includes(id)));
+      setParticipantTeamSelections((selections) => {
+        const next = { ...selections };
+        memberIds.forEach((id) => delete next[id]);
+        return next;
+      });
+      if (editingTeamId === team.id) {
+        setEditingTeamId(null);
+        setEditingTeamName("");
+      }
+      notify(`Regu ${team.name} berhasil dihapus.`);
+    } catch (error) {
+      console.error("Gagal menghapus regu.", error);
+      notify("Regu gagal dihapus. Muat ulang data dan coba lagi.", true);
+    } finally {
+      setTeamActionId(null);
+    }
+  };
+
+  const moveParticipant = async (participant: Participant) => {
+    const teamId = participantTeamSelections[participant.id] ?? "";
+    if (!teamId || teamId === participant.teamId) return;
+    setMovingParticipantId(participant.id);
+    try {
+      await assignParticipants([participant.id], teamId);
+      const team = getTeam(data, teamId);
+      notify(`${participant.name} dipindahkan ke Regu ${team?.name ?? ""}.`);
+      setParticipantTeamSelections((selections) => {
+        const next = { ...selections };
+        delete next[participant.id];
+        return next;
+      });
+    } catch (error) {
+      console.error("Gagal memindahkan peserta ke regu.", error);
+      notify("Pemindahan peserta gagal disimpan.", true);
+    } finally {
+      setMovingParticipantId(null);
+    }
+  };
 
   const togglePerson = (id: string) => {
     setSelectedIds((ids) =>
@@ -5472,6 +5567,11 @@ function TeamManagement({ notify }: { notify: Notify }) {
     try {
       await assignParticipants(selectedIds, targetTeam);
       notify(`${selectedIds.length} peserta dipetakan ke Regu ${getTeam(data, targetTeam)?.name}.`);
+      setParticipantTeamSelections((selections) => {
+        const next = { ...selections };
+        selectedIds.forEach((id) => delete next[id]);
+        return next;
+      });
       setSelectedIds([]);
     } catch (error) {
       console.error("Gagal memetakan peserta ke regu.", error);
@@ -5621,6 +5721,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
                 className="field"
                 value={newTeamName}
                 onChange={(event) => setNewTeamName(event.target.value)}
+                maxLength={100}
                 required
               />
             </label>
@@ -5720,6 +5821,99 @@ function TeamManagement({ notify }: { notify: Notify }) {
           </p>
         )}
       </section>
+      <section className="panel panel-pad" style={{ marginBottom: 18 }}>
+        <SectionHeading
+          title="Daftar regu"
+          detail={`${data.teams.length} regu terdaftar`}
+        />
+        {!data.teams.length ? (
+          <div className="empty-state">
+            <Users aria-hidden="true" />
+            <strong>Belum ada regu</strong>
+            <p>Tambahkan regu terlebih dahulu untuk memetakan peserta.</p>
+          </div>
+        ) : (
+          <div className="activity-list">
+            {data.teams.map((team) => {
+              const memberCount = data.participants.filter(
+                (person) => person.teamId === team.id,
+              ).length;
+              const isEditing = editingTeamId === team.id;
+              const isBusy = teamActionId === team.id;
+              return (
+                <div className="activity-row" key={team.id}>
+                  <span className="activity-copy">
+                    <strong>Regu {team.name}</strong>
+                    <span>
+                      {team.category} · {memberCount} peserta
+                    </span>
+                  </span>
+                  {isEditing ? (
+                    <form
+                      className="team-members-inline"
+                      onSubmit={(event) => void saveTeamName(event)}
+                    >
+                      <label className="sr-only" htmlFor={`team-name-${team.id}`}>
+                        Nama regu {team.name}
+                      </label>
+                      <input
+                        id={`team-name-${team.id}`}
+                        className="field"
+                        value={editingTeamName}
+                        onChange={(event) =>
+                          setEditingTeamName(event.target.value)
+                        }
+                        maxLength={100}
+                        required
+                      />
+                      <button
+                        className="button button-small"
+                        type="submit"
+                        disabled={isBusy || !editingTeamName.trim()}
+                      >
+                        {isBusy ? "Menyimpan…" : "Simpan"}
+                      </button>
+                      <button
+                        className="button button-secondary button-small"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => {
+                          setEditingTeamId(null);
+                          setEditingTeamName("");
+                        }}
+                      >
+                        Batal
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="team-members-inline">
+                      <button
+                        className="button button-secondary button-small"
+                        type="button"
+                        disabled={teamActionId !== null}
+                        onClick={() => {
+                          setEditingTeamId(team.id);
+                          setEditingTeamName(team.name);
+                        }}
+                      >
+                        Edit nama
+                      </button>
+                      <button
+                        className="button button-secondary button-small"
+                        type="button"
+                        disabled={teamActionId !== null}
+                        onClick={() => void removeTeam(team)}
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
       <div className="filter-row">
         <div className="search-control">
           <Search aria-hidden="true" />
@@ -5755,6 +5949,7 @@ function TeamManagement({ notify }: { notify: Notify }) {
                 <th>Pangkalan</th>
                 <th>Peran</th>
                 <th>Pinru</th>
+                <th>Pindahkan regu</th>
               </tr>
             </thead>
             <tbody>
@@ -5807,6 +6002,55 @@ function TeamManagement({ notify }: { notify: Notify }) {
                       >
                         {person.isPinru ? "Pinru saat ini" : "Jadikan Pinru"}
                       </button>
+                    </td>
+                    <td>
+                      <div className="team-members-inline">
+                        <label
+                          className="sr-only"
+                          htmlFor={`participant-team-${person.id}`}
+                        >
+                          Regu tujuan untuk {person.name}
+                        </label>
+                        <select
+                          id={`participant-team-${person.id}`}
+                          className="filter-select"
+                          value={
+                            participantTeamSelections[person.id] ??
+                            person.teamId
+                          }
+                          disabled={!data.teams.length || movingParticipantId === person.id}
+                          onChange={(event) =>
+                            setParticipantTeamSelections((selections) => ({
+                              ...selections,
+                              [person.id]: event.target.value,
+                            }))
+                          }
+                        >
+                          {!person.teamId ? (
+                            <option value="">Pilih regu</option>
+                          ) : null}
+                          {data.teams.map((option) => (
+                            <option value={option.id} key={option.id}>
+                              {option.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="button button-secondary button-small"
+                          type="button"
+                          disabled={
+                            movingParticipantId !== null ||
+                            !participantTeamSelections[person.id] ||
+                            (participantTeamSelections[person.id] ??
+                              person.teamId) === person.teamId
+                          }
+                          onClick={() => void moveParticipant(person)}
+                        >
+                          {movingParticipantId === person.id
+                            ? "Memindahkan…"
+                            : "Pindahkan"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
