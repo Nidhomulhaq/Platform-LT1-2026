@@ -2702,6 +2702,16 @@ function isExportedAccount(
   );
 }
 
+function isAccountRole(value: unknown): value is Role {
+  return (
+    value === "operator" ||
+    value === "panitia" ||
+    value === "juri" ||
+    value === "peserta" ||
+    value === "pendamping_regu"
+  );
+}
+
 function AccountManagement({ notify }: { notify: Notify }) {
   const {
     data,
@@ -2731,10 +2741,65 @@ function AccountManagement({ notify }: { notify: Notify }) {
   const [accountRoleFilter, setAccountRoleFilter] = React.useState<Role | "all">(
     "all",
   );
+  const [draftRestored, setDraftRestored] = React.useState(false);
+  const accountDraftKey = `lt1:account-create-draft:${currentUserId}`;
   const visibleAccounts =
     accountRoleFilter === "all"
       ? accounts
       : accounts.filter((account) => account.role === accountRoleFilter);
+
+  React.useEffect(() => {
+    try {
+      const savedDraft = window.sessionStorage.getItem(accountDraftKey);
+      if (savedDraft) {
+        const draft: unknown = JSON.parse(savedDraft);
+        if (isJsonRecord(draft)) {
+          if (typeof draft.loginId === "string") setLoginId(draft.loginId);
+          if (typeof draft.fullName === "string") setFullName(draft.fullName);
+          if (isAccountRole(draft.role)) setRole(draft.role);
+          if (typeof draft.teamId === "string") setTeamId(draft.teamId);
+          if (typeof draft.schoolId === "string") setSchoolId(draft.schoolId);
+          if (typeof draft.isPinru === "boolean") setIsPinru(draft.isPinru);
+        }
+      }
+    } catch (error) {
+      console.error("Draf pembuatan akun gagal dipulihkan.", error);
+    } finally {
+      setDraftRestored(true);
+    }
+  }, [accountDraftKey]);
+
+  React.useEffect(() => {
+    if (!draftRestored) return;
+    try {
+      if (
+        !loginId &&
+        !fullName &&
+        role === "peserta" &&
+        !teamId &&
+        !schoolId &&
+        !isPinru
+      ) {
+        window.sessionStorage.removeItem(accountDraftKey);
+        return;
+      }
+      window.sessionStorage.setItem(
+        accountDraftKey,
+        JSON.stringify({ loginId, fullName, role, teamId, schoolId, isPinru }),
+      );
+    } catch (error) {
+      console.error("Draf pembuatan akun gagal disimpan.", error);
+    }
+  }, [
+    accountDraftKey,
+    draftRestored,
+    fullName,
+    isPinru,
+    loginId,
+    role,
+    schoolId,
+    teamId,
+  ]);
 
   const request = async (method: string, body?: Record<string, unknown>) => {
     const response = await fetch("/api/operator/accounts", {
@@ -3096,7 +3161,7 @@ function AccountManagement({ notify }: { notify: Notify }) {
           <section className="panel panel-pad">
             <SectionHeading
               title="Buat akun"
-              detail="Kata sandi sementara hanya ditampilkan setelah akun berhasil dibuat."
+              detail="Draf otomatis tersimpan di tab ini tanpa kata sandi sampai tab ditutup. Kata sandi sementara hanya ditampilkan setelah akun berhasil dibuat."
             />
             <form className="school-fields" onSubmit={createAccount}>
               <label>
@@ -6633,8 +6698,10 @@ function EventCoordination({ notify }: { notify: Notify }) {
         authReady,
         dataLoading,
         dataError,
+        dataRefreshError,
         session,
         profile,
+        refreshWorkspace,
       } = useWorkspace();
       const router = useRouter();
       const [toast, setToast] = React.useState<{ message: string; error: boolean } | null>(
@@ -6830,6 +6897,21 @@ function EventCoordination({ notify }: { notify: Notify }) {
       return (
         <>
           <WorkspaceFrame view={view} notify={notify}>
+            {dataRefreshError ? (
+              <div className="notice auth-error" role="alert">
+                <CircleHelp aria-hidden="true" />
+                <p>
+                  {dataRefreshError}{" "}
+                  <button
+                    className="text-link"
+                    onClick={() => void refreshWorkspace()}
+                    type="button"
+                  >
+                    Coba lagi
+                  </button>
+                </p>
+              </div>
+            ) : null}
             {content}
           </WorkspaceFrame>
           {toast ? <StateToast message={toast.message} isError={toast.error} /> : null}

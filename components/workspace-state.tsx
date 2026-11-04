@@ -699,6 +699,7 @@ interface WorkspaceContextValue {
   authReady: boolean;
   dataLoading: boolean;
   dataError: string | null;
+  dataRefreshError: string | null;
   session: Session | null;
   profile: ProfileRow | null;
   currentUserId: string;
@@ -800,27 +801,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(!isConnected);
   const [dataLoading, setDataLoading] = useState(isConnected);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [dataRefreshError, setDataRefreshError] = useState<string | null>(null);
   const refreshRequestId = useRef(0);
   const lastForegroundRefreshAt = useRef(0);
+  const hasLoadedWorkspace = useRef(false);
+  const lastLoadedUserId = useRef<string | null>(null);
 
   const refreshRemoteData = useCallback(async (userId: string | null) => {
     const requestId = ++refreshRequestId.current;
-    setDataLoading(true);
-    setDataError(null);
+    const isBlockingLoad =
+      !hasLoadedWorkspace.current || lastLoadedUserId.current !== userId;
+    if (isBlockingLoad) {
+      setDataLoading(true);
+      setDataError(null);
+    }
+    setDataRefreshError(null);
     try {
       const loaded = await loadSupabaseWorkspace(userId);
       if (requestId !== refreshRequestId.current) return;
       setData(loaded.data);
       setProfile(loaded.profile);
+      hasLoadedWorkspace.current = true;
+      lastLoadedUserId.current = userId;
     } catch (error) {
       if (requestId !== refreshRequestId.current) return;
       console.error("Gagal memuat data LT-1 dari Supabase.", error);
-      setDataError(getErrorMessage(error));
-      setData(EMPTY_WORKSPACE_DATA);
-      setProfile(null);
+      if (isBlockingLoad) {
+        setDataError(getErrorMessage(error));
+        setData(EMPTY_WORKSPACE_DATA);
+        setProfile(null);
+      } else {
+        setDataRefreshError(
+          "Data belum dapat diperbarui. Periksa koneksi, lalu coba lagi.",
+        );
+      }
     } finally {
       if (requestId === refreshRequestId.current) {
-        setDataLoading(false);
+        if (isBlockingLoad) setDataLoading(false);
       }
     }
   }, []);
@@ -877,6 +894,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       authReady,
       dataLoading,
       dataError,
+      dataRefreshError,
       session,
       profile,
       currentUserId: session?.user.id ?? CURRENT_USER_ID,
