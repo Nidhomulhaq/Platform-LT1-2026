@@ -114,6 +114,15 @@ publishable disarankan. Jangan memakai connection string PostgreSQL atau
 service-role/secret key pada variabel `NEXT_PUBLIC_*`. ID pengguna login dipetakan
 ke identitas email internal `accounts.lt1.invalid` dan tidak memerlukan email pribadi.
 
+## Figma Console MCP
+
+Workspace mengonfigurasi Figma Console MCP melalui `.mcp.json` dan menjalankan
+versi `1.46.0` menggunakan `npx` (Node.js 18 atau lebih baru). Sebelum memulai ulang
+VS Code, siapkan environment variable `FIGMA_ACCESS_TOKEN` dengan personal access
+token Figma yang memiliki scope sesuai panduan resmi; token tidak disimpan di
+repositori. Untuk fitur Desktop Bridge, pasang plugin Figma Desktop Bridge dan
+jalankan plugin tersebut di file Figma.
+
 ## Deploy ke Vercel
 
 ### 1. Siapkan GitHub
