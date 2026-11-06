@@ -116,7 +116,9 @@ export type Database = {
         team_id: string;
         created_by: string | null;
         training_date: string;
-        evidence_url: string;
+        evidence_url: string | null;
+        evidence_path: string | null;
+        evidence_deleted_at: string | null;
         created_at: string;
         confirmed_at: string | null;
         confirmed_by: string | null;

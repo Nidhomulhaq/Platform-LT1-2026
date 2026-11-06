@@ -91,11 +91,22 @@ export interface TrainingLog {
   teamId: string;
   createdBy: string | null;
   trainingDate: string;
-  evidenceUrl: string;
+  evidenceUrl: string | null;
+  evidenceUrlError: string | null;
+  evidencePath: string | null;
+  evidenceDeletedAt: string | null;
   createdAt: string;
   confirmedAt: string | null;
   confirmedBy: string | null;
 }
+
+export const TRAINING_EVIDENCE_BUCKET = "training-evidence";
+export const TRAINING_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024;
+export const TRAINING_EVIDENCE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
 
 export interface JudgeAssignment {
   id: string;
@@ -658,6 +669,36 @@ async function loadSupabaseWorkspace(
       url: submission.submission_url,
     };
   }
+  const trainingLogs = await Promise.all(
+    (trainingLogsResult.data ?? []).map(async (log) => {
+      let evidenceUrl = log.evidence_url;
+      let evidenceUrlError: string | null = null;
+      if (log.evidence_path && !log.evidence_deleted_at) {
+        const { data: signedUrl, error } = await supabase.storage
+          .from(TRAINING_EVIDENCE_BUCKET)
+          .createSignedUrl(log.evidence_path, 60 * 60);
+        if (error) {
+          console.error("Gagal membuat tautan sementara foto latihan.", error);
+          evidenceUrlError = "Foto belum dapat ditampilkan.";
+        } else {
+          evidenceUrl = signedUrl.signedUrl;
+        }
+      }
+      return {
+        id: log.id,
+        teamId: log.team_id,
+        createdBy: log.created_by,
+        trainingDate: log.training_date,
+        evidenceUrl,
+        evidenceUrlError,
+        evidencePath: log.evidence_path,
+        evidenceDeletedAt: log.evidence_deleted_at,
+        createdAt: log.created_at,
+        confirmedAt: log.confirmed_at,
+        confirmedBy: log.confirmed_by,
+      };
+    }),
+  );
 
   return {
     profile: profileResult.data,
@@ -717,16 +758,7 @@ async function loadSupabaseWorkspace(
         startTime: schedule.start_time.slice(0, 5),
         endTime: schedule.end_time.slice(0, 5),
       })),
-      trainingLogs: (trainingLogsResult.data ?? []).map((log) => ({
-        id: log.id,
-        teamId: log.team_id,
-        createdBy: log.created_by,
-        trainingDate: log.training_date,
-        evidenceUrl: log.evidence_url,
-        createdAt: log.created_at,
-        confirmedAt: log.confirmed_at,
-        confirmedBy: log.confirmed_by,
-      })),
+      trainingLogs,
       competitions: (competitionsResult.data ?? []).map((competition) => ({
         id: competition.id,
         title: competition.title,
@@ -795,8 +827,9 @@ interface WorkspaceContextValue {
   createEventSchedule: (
     schedule: Omit<EventScheduleItem, "id">,
   ) => Promise<void>;
-  createTrainingLog: (teamId: string, evidenceUrl: string) => Promise<void>;
-  confirmTrainingLog: (trainingLogId: string) => Promise<void>;
+  createTrainingLog: (teamId: string, evidenceFile: File) => Promise<void>;
+  deleteTrainingLogEvidence: (trainingLogId: string) => Promise<void>;
+  confirmTrainingLog: (trainingLogId: string) => Promise<unknown | null>;
   updateEventSchedule: (
     scheduleId: string,
     schedule: Omit<EventScheduleItem, "id">,
@@ -988,6 +1021,49 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const requireClient = () => {
     if (!supabase) throw new Error("Konfigurasi Supabase belum tersedia.");
     return supabase;
+  };
+
+  const deleteTrainingLogEvidence = async (trainingLogId: string) => {
+    const client = requireClient();
+    const { data: log, error: loadError } = await client
+      .from("training_logs")
+      .select("evidence_path, evidence_deleted_at, confirmed_at")
+      .eq("id", trainingLogId)
+      .single();
+    if (loadError) throw loadError;
+    if (!log.evidence_path || log.evidence_deleted_at) return;
+    if (!log.confirmed_at) {
+      throw new Error("Bukti latihan hanya dapat dihapus setelah dikonfirmasi.");
+    }
+
+    const { error: removeError } = await client.storage
+      .from(TRAINING_EVIDENCE_BUCKET)
+      .remove([log.evidence_path]);
+    if (removeError) throw removeError;
+
+    const deletedAt = new Date().toISOString();
+    const { error: updateError } = await client
+      .from("training_logs")
+      .update({ evidence_deleted_at: deletedAt })
+      .eq("id", trainingLogId)
+      .is("evidence_deleted_at", null)
+      .select("id")
+      .single();
+    if (updateError) throw updateError;
+
+    setData((current) => ({
+      ...current,
+      trainingLogs: current.trainingLogs.map((item) =>
+        item.id === trainingLogId
+          ? {
+              ...item,
+              evidenceUrl: null,
+              evidenceUrlError: null,
+              evidenceDeletedAt: deletedAt,
+            }
+          : item,
+      ),
+    }));
   };
 
   const value = useMemo<WorkspaceContextValue>(
@@ -1331,35 +1407,94 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           eventSchedules: [...current.eventSchedules, nextSchedule],
         }));
       },
-      createTrainingLog: async (teamId, evidenceUrl) => {
-        if (!supabase || !session) {
+      createTrainingLog: async (teamId, evidenceFile) => {
+        if (!session) {
           throw new Error("Masuk dengan akun pendamping untuk mencatat latihan.");
         }
-        const { data: saved, error } = await requireClient()
-          .from("training_logs")
-          .insert({
-            team_id: teamId,
-            created_by: session.user.id,
-            evidence_url: evidenceUrl,
-          })
-          .select("*")
-          .single();
-        if (error) throw error;
-        const nextLog: TrainingLog = {
-          id: saved.id,
-          teamId: saved.team_id,
-          createdBy: saved.created_by,
-          trainingDate: saved.training_date,
-          evidenceUrl: saved.evidence_url,
-          createdAt: saved.created_at,
-          confirmedAt: saved.confirmed_at,
-          confirmedBy: saved.confirmed_by,
+        const client = requireClient();
+        const extensionByMimeType: Record<
+          (typeof TRAINING_EVIDENCE_MIME_TYPES)[number],
+          string
+        > = {
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/webp": "webp",
         };
-        setData((current) => ({
-          ...current,
-          trainingLogs: [nextLog, ...current.trainingLogs],
-        }));
+        const extension =
+          extensionByMimeType[
+            evidenceFile.type as (typeof TRAINING_EVIDENCE_MIME_TYPES)[number]
+          ];
+        if (!extension) {
+          throw new Error("Pilih foto berformat JPG, PNG, atau WebP.");
+        }
+        if (evidenceFile.size > TRAINING_EVIDENCE_MAX_BYTES) {
+          throw new Error("Ukuran foto maksimal 10 MB.");
+        }
+
+        const evidencePath = `${teamId}/${crypto.randomUUID()}.${extension}`;
+        const { error: uploadError } = await client.storage
+          .from(TRAINING_EVIDENCE_BUCKET)
+          .upload(evidencePath, evidenceFile, {
+            contentType: evidenceFile.type,
+            upsert: false,
+          });
+        if (uploadError) throw uploadError;
+
+        let evidenceUrl: string;
+        try {
+          const { data: signedUrl, error: signedUrlError } = await client.storage
+            .from(TRAINING_EVIDENCE_BUCKET)
+            .createSignedUrl(evidencePath, 60 * 60);
+          if (signedUrlError) throw signedUrlError;
+          evidenceUrl = signedUrl.signedUrl;
+
+          const { data: saved, error } = await client
+            .from("training_logs")
+            .insert({
+              team_id: teamId,
+              created_by: session.user.id,
+              evidence_url: null,
+              evidence_path: evidencePath,
+            })
+            .select("*")
+            .single();
+          if (error) throw error;
+
+          const nextLog: TrainingLog = {
+            id: saved.id,
+            teamId: saved.team_id,
+            createdBy: saved.created_by,
+            trainingDate: saved.training_date,
+            evidenceUrl,
+            evidenceUrlError: null,
+            evidencePath: saved.evidence_path,
+            evidenceDeletedAt: saved.evidence_deleted_at,
+            createdAt: saved.created_at,
+            confirmedAt: saved.confirmed_at,
+            confirmedBy: saved.confirmed_by,
+          };
+          setData((current) => ({
+            ...current,
+            trainingLogs: [nextLog, ...current.trainingLogs],
+          }));
+        } catch (error) {
+          const { error: cleanupError } = await client.storage
+            .from(TRAINING_EVIDENCE_BUCKET)
+            .remove([evidencePath]);
+          if (cleanupError) {
+            console.error(
+              "Gagal membersihkan foto setelah penyimpanan catatan latihan gagal.",
+              cleanupError,
+            );
+            throw new Error(
+              "Catatan gagal disimpan dan foto sementara belum dapat dibersihkan.",
+              { cause: error },
+            );
+          }
+          throw error;
+        }
       },
+      deleteTrainingLogEvidence,
       confirmTrainingLog: async (trainingLogId) => {
         const { data: confirmedAt, error } = await requireClient().rpc(
           "confirm_training_log",
@@ -1381,6 +1516,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               : log,
           ),
         }));
+        try {
+          await deleteTrainingLogEvidence(trainingLogId);
+          return null;
+        } catch (cleanupError) {
+          return cleanupError;
+        }
       },
       updateEventSchedule: async (scheduleId, schedule) => {
         if (supabase) {
@@ -1694,6 +1835,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       data,
       dataError,
       dataLoading,
+      deleteTrainingLogEvidence,
       isConnected,
       profile,
       refreshRemoteData,

@@ -1550,6 +1550,48 @@ textarea:focus-visible {
   flex: 1.5;
 }
 
+.training-evidence-preview,
+.training-evidence-link {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+
+.training-evidence-preview {
+  width: min(100%, 360px);
+  margin-top: 16px;
+}
+
+.training-evidence-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+  object-fit: cover;
+}
+
+.training-evidence-link {
+  width: 104px;
+  height: 72px;
+  flex: 0 0 auto;
+}
+
+.training-evidence-link img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.training-confirmation-status {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .training-read-only {
   margin-bottom: var(--gap);
 }

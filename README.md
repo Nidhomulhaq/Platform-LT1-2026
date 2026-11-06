@@ -97,16 +97,19 @@ dan jalankan hasilnya memakai `npm run start`.
     bertumpang tindih pada tanggal yang sama ditolak oleh aplikasi dan database.
 11. Jalankan migration
     [`supabase/migrations/20261106112430_training_logs.sql`](./supabase/migrations/20261106112430_training_logs.sql)
-    untuk menambahkan catatan latihan berbasis tautan Google Drive.
+    untuk menambahkan catatan latihan.
 12. Jalankan berurutan
     [`supabase/migrations/20261106121603_training_log_review.sql`](./supabase/migrations/20261106121603_training_log_review.sql),
     [`supabase/migrations/20261106122944_restrict_training_log_confirmation.sql`](./supabase/migrations/20261106122944_restrict_training_log_confirmation.sql),
-    dan [`supabase/migrations/20261106123143_index_training_logs.sql`](./supabase/migrations/20261106123143_index_training_logs.sql)
+    [`supabase/migrations/20261106123143_index_training_logs.sql`](./supabase/migrations/20261106123143_index_training_logs.sql),
+    dan [`supabase/migrations/20261106170000_training_photo_evidence.sql`](./supabase/migrations/20261106170000_training_photo_evidence.sql)
     untuk menambahkan konfirmasi operator, pembaruan laporan melalui Realtime,
-    dan indeks akses. Peserta hanya dapat membaca catatan regunya; pendamping
-    dapat mengirim catatan untuk regu yang ditugaskan. Bukti latihan diunggah ke
-    Google Drive secara terpisah, lalu tautan HTTPS-nya ditempel pada formulir.
-    Pastikan izin berkas Drive mengizinkan operator dan anggota regu membukanya.
+    indeks akses, dan penyimpanan foto privat. Peserta hanya dapat membaca catatan regunya; pendamping
+    dapat mengirim catatan untuk regu yang ditugaskan. Bukti latihan diunggah
+    sebagai foto JPG, PNG, atau WebP maksimal 10 MB ke bucket privat Supabase
+    Storage. Foto dapat dilihat oleh anggota regu dan operator, lalu dihapus
+    setelah operator mengonfirmasi latihan. Jika penghapusan gagal, operator
+    dapat mencoba ulang dari laporan harian.
     Operator memantau laporan hari ini di `/operator/training`; ekspor XLS
     harian, mingguan, dan bulanan hanya berisi catatan yang sudah dikonfirmasi.
 

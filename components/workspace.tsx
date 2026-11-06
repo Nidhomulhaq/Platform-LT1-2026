@@ -62,6 +62,8 @@ import {
   type Team,
   type EventScheduleItem,
   type TrainingLog,
+  TRAINING_EVIDENCE_MAX_BYTES,
+  TRAINING_EVIDENCE_MIME_TYPES,
   useWorkspace,
 } from "@/components/workspace-state";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -2360,7 +2362,11 @@ function createTrainingReportWorkbook(
       `Regu ${teams.find((team) => team.id === log.teamId)?.name ?? "Tidak diketahui"}`,
       formatTrainingDate(log.trainingDate),
       formatTrainingTime(log.createdAt),
-      log.evidenceUrl,
+      log.evidencePath
+        ? log.evidenceDeletedAt
+          ? "Foto dihapus setelah konfirmasi"
+          : "Foto menunggu penghapusan"
+        : log.evidenceUrl ?? "",
       log.confirmedAt ? formatTrainingTime(log.confirmedAt) : "",
     ]),
   ];
@@ -2428,13 +2434,25 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
       }),
     [],
   );
-  const [evidenceUrl, setEvidenceUrl] = React.useState("");
+  const [evidenceFile, setEvidenceFile] = React.useState<File | null>(null);
+  const [evidencePreviewUrl, setEvidencePreviewUrl] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const evidenceInputRef = React.useRef<HTMLInputElement>(null);
   const [selectedDate, setSelectedDate] = React.useState(today);
   const [showCalendarImage, setShowCalendarImage] = React.useState(false);
   const [calendarImage, setCalendarImage] = React.useState("");
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const closeCalendarButtonRef = React.useRef<HTMLButtonElement>(null);
+
+  React.useEffect(() => {
+    if (!evidenceFile) {
+      setEvidencePreviewUrl("");
+      return;
+    }
+    const previewUrl = URL.createObjectURL(evidenceFile);
+    setEvidencePreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [evidenceFile]);
 
   React.useEffect(() => {
     if (!showCalendarImage) return;
@@ -2531,28 +2549,32 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
   const submitTrainingLog = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!team) return;
-    let url: URL;
-    try {
-      url = new URL(evidenceUrl.trim());
-    } catch {
-      notify("Masukkan tautan Google Drive yang valid.", true);
+    if (!evidenceFile) {
+      notify("Pilih foto bukti latihan terlebih dahulu.", true);
       return;
     }
     if (
-      url.protocol !== "https:" ||
-      !["drive.google.com", "docs.google.com"].includes(url.hostname)
+      !TRAINING_EVIDENCE_MIME_TYPES.some((type) => type === evidenceFile.type)
     ) {
-      notify("Gunakan tautan HTTPS dari drive.google.com atau docs.google.com.", true);
+      notify("Pilih foto berformat JPG, PNG, atau WebP.", true);
+      return;
+    }
+    if (evidenceFile.size > TRAINING_EVIDENCE_MAX_BYTES) {
+      notify("Ukuran foto maksimal 10 MB.", true);
       return;
     }
     setSaving(true);
     try {
-      await createTrainingLog(team.id, url.toString());
-      setEvidenceUrl("");
+      await createTrainingLog(team.id, evidenceFile);
+      setEvidenceFile(null);
+      if (evidenceInputRef.current) evidenceInputRef.current.value = "";
       notify("Catatan latihan berhasil disimpan.");
     } catch (error) {
       console.error("Gagal menyimpan catatan latihan.", error);
-      notify("Catatan latihan gagal disimpan. Pastikan tautan Drive dapat dibagikan.", true);
+      notify(
+        error instanceof Error ? error.message : "Catatan latihan gagal disimpan.",
+        true,
+      );
     } finally {
       setSaving(false);
     }
@@ -2633,7 +2655,7 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
             <section className="panel panel-pad training-entry">
               <SectionHeading
                 title="Catat latihan"
-                detail="Tanggal mengikuti hari pengisian. Tempel tautan bukti yang dibagikan melalui Google Drive."
+                detail="Tanggal mengikuti hari pengisian. Unggah satu foto bukti latihan."
               />
               <form className="form-row training-entry-form" onSubmit={(event) => void submitTrainingLog(event)}>
                 <label>
@@ -2646,15 +2668,15 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
                   />
                 </label>
                 <label>
-                  <span className="field-label">Tautan bukti Google Drive</span>
+                  <span className="field-label">Foto bukti latihan</span>
                   <input
                     className="field"
-                    type="url"
-                    inputMode="url"
-                    autoComplete="url"
-                    placeholder="https://drive.google.com/…"
-                    value={evidenceUrl}
-                    onChange={(event) => setEvidenceUrl(event.target.value)}
+                    ref={evidenceInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) =>
+                      setEvidenceFile(event.target.files?.[0] ?? null)
+                    }
                     required
                   />
                 </label>
@@ -2663,8 +2685,19 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
                 </button>
               </form>
               <p className="field-hint">
-                Pastikan izin tautan Drive memungkinkan operator dan anggota regu membukanya.
+                JPG, PNG, atau WebP · maksimal 10 MB. Foto hanya dapat dibuka oleh regu terkait dan operator.
               </p>
+              {evidencePreviewUrl ? (
+                <div className="training-evidence-preview">
+                  <Image
+                    src={evidencePreviewUrl}
+                    alt="Pratinjau foto bukti latihan"
+                    width={640}
+                    height={480}
+                    unoptimized
+                  />
+                </div>
+              ) : null}
             </section>
           ) : (
             <div className="notice training-read-only" role="note">
@@ -2687,15 +2720,36 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
                       <span>Diisi pukul {formatTrainingTime(log.createdAt)} WIB</span>
                     </span>
                     <div className="training-log-actions">
-                      <a
-                        className="button button-secondary button-small"
-                        href={log.evidenceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <ExternalLink aria-hidden="true" />
-                        Buka bukti
-                      </a>
+                      {log.evidencePath && log.evidenceUrl ? (
+                        <a
+                          className="training-evidence-link"
+                          href={log.evidenceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Image
+                            src={log.evidenceUrl}
+                            alt={`Foto bukti latihan ${formatTrainingDate(log.trainingDate)}`}
+                            width={640}
+                            height={480}
+                            unoptimized
+                          />
+                        </a>
+                      ) : log.evidenceUrl ? (
+                        <a
+                          className="button button-secondary button-small"
+                          href={log.evidenceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink aria-hidden="true" />
+                          Buka tautan bukti
+                        </a>
+                      ) : log.evidenceDeletedAt ? (
+                        <span className="field-hint">Foto dihapus setelah konfirmasi.</span>
+                      ) : log.evidencePath ? (
+                        <span className="field-hint">{log.evidenceUrlError ?? "Foto belum dapat ditampilkan."}</span>
+                      ) : null}
                       {log.confirmedAt ? (
                         <span className="status-pill is-approved">
                           <CheckCircle2 aria-hidden="true" />
@@ -2790,7 +2844,12 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
 }
 
 function TrainingReports({ notify }: { notify: Notify }) {
-  const { data, confirmTrainingLog, dataRefreshError } = useWorkspace();
+  const {
+    data,
+    confirmTrainingLog,
+    deleteTrainingLogEvidence,
+    dataRefreshError,
+  } = useWorkspace();
   const [today, setToday] = React.useState(() => jakartaDate());
   const [period, setPeriod] = React.useState<TrainingReportPeriod>("daily");
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
@@ -2832,11 +2891,29 @@ function TrainingReports({ notify }: { notify: Notify }) {
   const confirmLog = async (log: TrainingLog) => {
     setConfirmingId(log.id);
     try {
-      await confirmTrainingLog(log.id);
+      const cleanupError = await confirmTrainingLog(log.id);
+      if (cleanupError) {
+        console.error("Foto latihan belum berhasil dihapus setelah konfirmasi.", cleanupError);
+        notify("Latihan terkonfirmasi, tetapi fotonya belum terhapus. Coba hapus ulang.", true);
+        return;
+      }
       notify(`Latihan Regu ${data.teams.find((team) => team.id === log.teamId)?.name ?? ""} terkonfirmasi.`);
     } catch (error) {
       console.error("Gagal mengonfirmasi laporan latihan.", error);
       notify("Konfirmasi gagal disimpan. Muat ulang data dan coba lagi.", true);
+    } finally {
+      setConfirmingId(null);
+    }
+  };
+
+  const retryEvidenceDeletion = async (log: TrainingLog) => {
+    setConfirmingId(log.id);
+    try {
+      await deleteTrainingLogEvidence(log.id);
+      notify("Foto bukti latihan berhasil dihapus.");
+    } catch (error) {
+      console.error("Gagal menghapus ulang foto latihan.", error);
+      notify("Foto belum dapat dihapus. Periksa koneksi lalu coba lagi.", true);
     } finally {
       setConfirmingId(null);
     }
@@ -2881,16 +2958,51 @@ function TrainingReports({ notify }: { notify: Notify }) {
                       <td>{formatTrainingDate(log.trainingDate)}</td>
                       <td>{formatTrainingTime(log.createdAt)} WIB</td>
                       <td>
-                        <a className="text-link" href={log.evidenceUrl} target="_blank" rel="noopener noreferrer">
-                          Buka tautan <ExternalLink aria-hidden="true" />
-                        </a>
+                        {log.evidencePath && log.evidenceUrl ? (
+                          <a
+                            className="training-evidence-link"
+                            href={log.evidenceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Image
+                              src={log.evidenceUrl}
+                              alt={`Foto bukti latihan Regu ${logTeam?.name ?? ""}`}
+                              width={640}
+                              height={480}
+                              unoptimized
+                            />
+                          </a>
+                        ) : log.evidenceUrl ? (
+                          <a className="text-link" href={log.evidenceUrl} target="_blank" rel="noopener noreferrer">
+                            Buka tautan <ExternalLink aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <span className="field-hint">
+                            {log.evidenceDeletedAt
+                              ? "Foto sudah dihapus"
+                              : log.evidenceUrlError ?? "Foto belum dapat ditampilkan"}
+                          </span>
+                        )}
                       </td>
                       <td>
                         {log.confirmedAt ? (
-                          <span className="status-pill is-approved">
-                            <CheckCircle2 aria-hidden="true" />
-                            Terkonfirmasi
-                          </span>
+                          <div className="training-confirmation-status">
+                            <span className="status-pill is-approved">
+                              <CheckCircle2 aria-hidden="true" />
+                              Terkonfirmasi
+                            </span>
+                            {log.evidencePath && !log.evidenceDeletedAt ? (
+                              <button
+                                className="button button-secondary button-small"
+                                type="button"
+                                disabled={confirmingId !== null}
+                                onClick={() => void retryEvidenceDeletion(log)}
+                              >
+                                {confirmingId === log.id ? "Menghapus…" : "Coba hapus foto"}
+                              </button>
+                            ) : null}
+                          </div>
                         ) : (
                           <button
                             className="button button-small"
