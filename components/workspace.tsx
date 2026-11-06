@@ -2422,9 +2422,13 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
     () => Array.from({ length: 7 }, (_, index) => addDateDays(weekStart, index)),
     [weekStart],
   );
+  const weekLogs = React.useMemo(
+    () => teamLogs.filter((log) => weekDates.includes(log.trainingDate)),
+    [teamLogs, weekDates],
+  );
   const datesWithLogs = React.useMemo(
-    () => new Set(teamLogs.map((log) => log.trainingDate)),
-    [teamLogs],
+    () => new Set(weekLogs.map((log) => log.trainingDate)),
+    [weekLogs],
   );
   const dateLabels = React.useMemo(
     () =>
@@ -2433,6 +2437,15 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
         timeZone: "Asia/Jakarta",
       }),
     [],
+  );
+  const calendarMonthLabel = React.useMemo(
+    () =>
+      new Intl.DateTimeFormat("id-ID", {
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Jakarta",
+      }).format(new Date(`${today}T12:00:00+07:00`)),
+    [today],
   );
   const [evidenceFile, setEvidenceFile] = React.useState<File | null>(null);
   const [evidencePreviewUrl, setEvidencePreviewUrl] = React.useState("");
@@ -2483,67 +2496,70 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
     const border = color("--border", "#e2e9e5");
     const accent = color("--accent", "#1b7a3e");
     const positiveBackground = color("--positive-bg", "#dcfce7");
+    const accentSoft = color("--accent-soft", "#e7f2eb");
 
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = background;
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = text;
     context.font = "600 34px Segoe UI, Arial, sans-serif";
-    context.fillText(`Regu ${team.name}`, 44, 66);
+    context.fillText(calendarMonthLabel, 44, 64);
     context.fillStyle = muted;
     context.font = "18px Segoe UI, Arial, sans-serif";
-    context.fillText(
-      `${formatTrainingDate(weekDates[0])} – ${formatTrainingDate(weekDates[6])}`,
-      44,
-      100,
-    );
+    context.fillText(`Regu ${team.name} · ${formatTrainingDate(weekDates[0])} – ${formatTrainingDate(weekDates[6])}`, 44, 96);
+    context.fillStyle = text;
+    context.font = "600 21px Segoe UI, Arial, sans-serif";
+    context.fillText(`${datesWithLogs.size} hari latihan`, 44, 148);
+    context.fillStyle = muted;
+    context.font = "15px Segoe UI, Arial, sans-serif";
+    context.fillText(`${weekLogs.length} catatan pekan ini`, 44, 174);
 
-    const cardWidth = 112;
-    const gap = 14;
+    const cellWidth = 118;
     const left = 44;
-    const top = 140;
+    const top = 220;
     weekDates.forEach((date, index) => {
-      const x = left + index * (cardWidth + gap);
-      context.strokeStyle = border;
-      context.lineWidth = 2;
-      context.strokeRect(x, top, cardWidth, 190);
+      const x = left + index * cellWidth;
+      const centerX = x + cellWidth / 2;
       context.fillStyle = muted;
       context.font = "16px Segoe UI, Arial, sans-serif";
       context.textAlign = "center";
-      context.fillText(dateLabels.format(new Date(`${date}T12:00:00+07:00`)), x + cardWidth / 2, top + 36);
-      context.fillStyle = text;
-      context.font = "600 30px Segoe UI, Arial, sans-serif";
-      context.fillText(date.slice(8), x + cardWidth / 2, top + 82);
+      context.fillText(dateLabels.format(new Date(`${date}T12:00:00+07:00`)), centerX, top);
+      context.fillStyle = datesWithLogs.has(date)
+        ? positiveBackground
+        : date === today
+          ? accentSoft
+          : background;
+      context.strokeStyle = datesWithLogs.has(date) ? positiveBackground : border;
+      context.lineWidth = 2;
+      context.beginPath();
+      context.arc(centerX, top + 56, 27, 0, Math.PI * 2);
+      context.fill();
+      if (!datesWithLogs.has(date)) context.stroke();
       if (datesWithLogs.has(date)) {
-        context.fillStyle = positiveBackground;
-        context.beginPath();
-        context.arc(x + cardWidth / 2, top + 136, 25, 0, Math.PI * 2);
-        context.fill();
         context.fillStyle = accent;
-        context.font = "600 25px Segoe UI, Arial, sans-serif";
-        context.fillText("✓", x + cardWidth / 2, top + 145);
-        context.fillStyle = text;
-        context.font = "14px Segoe UI, Arial, sans-serif";
-        context.fillText("Latihan", x + cardWidth / 2, top + 178);
+        context.font = "600 22px Segoe UI, Arial, sans-serif";
+        context.fillText("✓", centerX, top + 64);
       } else {
-        context.fillStyle = muted;
-        context.font = "14px Segoe UI, Arial, sans-serif";
-        context.fillText("Belum ada", x + cardWidth / 2, top + 145);
-        context.fillText("catatan", x + cardWidth / 2, top + 166);
+        context.fillStyle = date === today ? accent : text;
+        context.font = "600 20px Segoe UI, Arial, sans-serif";
+        context.fillText(String(Number(date.slice(8))), centerX, top + 63);
       }
     });
     context.textAlign = "left";
     context.fillStyle = muted;
     context.font = "14px Segoe UI, Arial, sans-serif";
-    context.fillText("Kalender latihan LT-1 · Asia/Jakarta", 44, 390);
+    context.fillText("Kalender latihan LT-1 · Asia/Jakarta", 44, 370);
     setCalendarImage(canvas.toDataURL("image/png"));
   }, [
+    calendarMonthLabel,
     dateLabels,
     datesWithLogs,
     notify,
     showCalendarImage,
     team,
+    today,
     weekDates,
+    weekLogs.length,
   ]);
 
   const submitTrainingLog = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -2609,17 +2625,42 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
       ) : (
         <>
           <section className="panel panel-pad training-calendar-section">
-            <div className="section-heading">
+            <div className="training-calendar-heading">
               <div>
-                <h2>Pekan ini</h2>
+                <h2>{calendarMonthLabel}</h2>
                 <p>
-                  {formatTrainingDate(weekDates[0])} –{" "}
+                  Regu {team.name} · {formatTrainingDate(weekDates[0])} –{" "}
                   {formatTrainingDate(weekDates[6])}
                 </p>
               </div>
-              <span className="role-chip">Waktu Asia/Jakarta</span>
+              <button
+                className="button button-secondary button-small"
+                type="button"
+                onClick={() => {
+                  setSelectedDate(today);
+                  setCalendarImage("");
+                  setShowCalendarImage(true);
+                }}
+              >
+                <Download aria-hidden="true" />
+                Unduh
+              </button>
             </div>
-            <div className="training-calendar" aria-label="Kalender latihan pekan ini">
+            <div className="training-calendar-summary">
+              <div>
+                <span>Hari latihan</span>
+                <strong>{datesWithLogs.size}</strong>
+              </div>
+              <div>
+                <span>Catatan pekan ini</span>
+                <strong>{weekLogs.length}</strong>
+              </div>
+            </div>
+            <div
+              className="training-calendar"
+              role="group"
+              aria-label="Kalender latihan pekan ini"
+            >
               {weekDates.map((date) => {
                 const hasLog = datesWithLogs.has(date);
                 const isToday = date === today;
@@ -2635,19 +2676,24 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
                       setShowCalendarImage(true);
                     }}
                   >
-                    <span>{dateLabels.format(new Date(`${date}T12:00:00+07:00`))}</span>
-                    <strong>{date.slice(8)}</strong>
-                    {hasLog ? (
-                      <CheckCircle2 aria-label="Ada catatan latihan" />
-                    ) : (
-                      <span className="training-day-empty">—</span>
-                    )}
+                    <span className="training-day-weekday">
+                      {dateLabels.format(new Date(`${date}T12:00:00+07:00`))}
+                    </span>
+                    <strong className="training-day-date">
+                      {Number(date.slice(8))}
+                    </strong>
+                    <span
+                      className={`training-day-status${hasLog ? " has-log" : ""}`}
+                      aria-hidden="true"
+                    >
+                      {hasLog ? <Check /> : null}
+                    </span>
                   </button>
                 );
               })}
             </div>
             <p className="training-calendar-hint">
-              Pilih tanggal untuk membuka dan mengunduh kalender PNG satu pekan.
+              Pilih tanggal untuk melihat kalender satu pekan dan mengunduhnya sebagai PNG.
             </p>
           </section>
 
@@ -2794,33 +2840,17 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
             aria-modal="true"
             aria-labelledby="training-calendar-dialog-title"
           >
-            <div className="section-heading">
+            <div className="training-dialog-grip" aria-hidden="true" />
+            <div className="training-dialog-heading">
               <div>
-                <h2 id="training-calendar-dialog-title">Kalender latihan Regu {team?.name}</h2>
-                <p>{formatTrainingDate(weekStart)} – {formatTrainingDate(weekDates[6])}</p>
+                <h2 id="training-calendar-dialog-title">{calendarMonthLabel}</h2>
+                <p>
+                  Regu {team?.name} · {formatTrainingDate(weekStart)} –{" "}
+                  {formatTrainingDate(weekDates[6])}
+                </p>
               </div>
               <button
-                className="icon-button"
-                type="button"
-                aria-label="Tutup kalender"
-                ref={closeCalendarButtonRef}
-                onClick={() => setShowCalendarImage(false)}
-              >
-                <X aria-hidden="true" />
-              </button>
-            </div>
-            {calendarImage ? (
-              <img
-                className="training-calendar-image"
-                src={calendarImage}
-                alt={`Kalender latihan satu pekan Regu ${team?.name}, tanggal ${formatTrainingDate(weekStart)} sampai ${formatTrainingDate(weekDates[6])}`}
-              />
-            ) : (
-              <p className="inline-note" role="status">Menyiapkan gambar kalender…</p>
-            )}
-            <div className="training-dialog-actions">
-              <button
-                className="button"
+                className="button button-secondary button-small training-calendar-download"
                 type="button"
                 disabled={!calendarImage}
                 onClick={downloadCalendar}
@@ -2828,9 +2858,64 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
                 <Download aria-hidden="true" />
                 Unduh PNG
               </button>
+            </div>
+            <div className="training-calendar-summary training-dialog-summary">
+              <div>
+                <span>Hari latihan</span>
+                <strong>{datesWithLogs.size}</strong>
+              </div>
+              <div>
+                <span>Catatan pekan ini</span>
+                <strong>{weekLogs.length}</strong>
+              </div>
+            </div>
+            <div
+              className="training-calendar training-dialog-calendar"
+              role="group"
+              aria-label="Kalender latihan satu pekan"
+            >
+              {weekDates.map((date) => {
+                const hasLog = datesWithLogs.has(date);
+                const isToday = date === today;
+                return (
+                  <button
+                    className={`training-day${isToday ? " is-today" : ""}${hasLog ? " has-log" : ""}${selectedDate === date ? " is-selected" : ""}`}
+                    key={date}
+                    type="button"
+                    aria-label={`${dateLabels.format(new Date(`${date}T12:00:00+07:00`))}, ${formatTrainingDate(date)}${hasLog ? ", ada catatan latihan" : ", belum ada catatan latihan"}`}
+                    aria-pressed={selectedDate === date}
+                    onClick={() => setSelectedDate(date)}
+                  >
+                    <span className="training-day-weekday">
+                      {dateLabels.format(new Date(`${date}T12:00:00+07:00`))}
+                    </span>
+                    <strong className="training-day-date">
+                      {Number(date.slice(8))}
+                    </strong>
+                    <span
+                      className={`training-day-status${hasLog ? " has-log" : ""}`}
+                      aria-hidden="true"
+                    >
+                      {hasLog ? <Check /> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="training-calendar-selected-day">
+              {formatTrainingDate(selectedDate, "full")}
+              {datesWithLogs.has(selectedDate)
+                ? " · Latihan tercatat"
+                : " · Belum ada latihan"}
+            </p>
+            {!calendarImage ? (
+              <p className="inline-note" role="status">Menyiapkan kalender PNG…</p>
+            ) : null}
+            <div className="training-dialog-actions">
               <button
                 className="button button-secondary"
                 type="button"
+                ref={closeCalendarButtonRef}
                 onClick={() => setShowCalendarImage(false)}
               >
                 Tutup
