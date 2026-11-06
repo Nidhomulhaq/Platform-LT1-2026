@@ -545,6 +545,8 @@ function WorkspaceFrame({
   const { data, isConnected, profile, session, signOut } = useWorkspace();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const [bottomNavigationFromDashboard, setBottomNavigationFromDashboard] =
+    React.useState(false);
   React.useEffect(() => {
     if (!menuOpen && !accountMenuOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -580,6 +582,28 @@ function WorkspaceFrame({
             : "peserta";
   const role: Role = isConnected ? profile?.role ?? "peserta" : routeRole;
   const isDashboardPage = pathname === dashboardPathForRole(role);
+  const isBottomNavigationDestination = bottomNavigation(role).some(
+    (item) => item.href === pathname && item.href !== dashboardPathForRole(role),
+  );
+  const showBottomNavigation =
+    isDashboardPage ||
+    (isBottomNavigationDestination && bottomNavigationFromDashboard);
+
+  React.useEffect(() => {
+    if (isDashboardPage) {
+      window.sessionStorage.removeItem("workspace-bottom-navigation");
+      setBottomNavigationFromDashboard(false);
+      return;
+    }
+
+    const enteredFromDashboard =
+      isBottomNavigationDestination &&
+      window.sessionStorage.getItem("workspace-bottom-navigation") === "visible";
+    setBottomNavigationFromDashboard(enteredFromDashboard);
+    if (!enteredFromDashboard) {
+      window.sessionStorage.removeItem("workspace-bottom-navigation");
+    }
+  }, [isBottomNavigationDestination, isDashboardPage]);
 
   const roleOptions: { value: Role; label: string; path: string }[] = [
     { value: "peserta", label: "Peserta", path: "/dashboard" },
@@ -622,7 +646,7 @@ function WorkspaceFrame({
 
   return (
     <div
-      className={`workspace${isParticipant ? " participant-workspace" : ""}${isDashboardPage ? " has-bottom-navigation" : ""}${menuOpen ? " has-open-sidebar" : ""}`}
+      className={`workspace${isParticipant ? " participant-workspace" : ""}${showBottomNavigation ? " has-bottom-navigation" : ""}${menuOpen ? " has-open-sidebar" : ""}`}
     >
       {menuOpen ? (
         <button
@@ -779,7 +803,7 @@ function WorkspaceFrame({
         </div>
         <div className="content">{children}</div>
       </main>
-      {isDashboardPage ? (
+      {showBottomNavigation ? (
         <nav className="workspace-tab-bar" aria-label="Navigasi ruang kerja">
           {bottomNavigation(role).map((item) => {
             const active =
@@ -797,6 +821,12 @@ function WorkspaceFrame({
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 aria-label={item.label}
+                onClick={() =>
+                  window.sessionStorage.setItem(
+                    "workspace-bottom-navigation",
+                    "visible",
+                  )
+                }
               >
                 <IconForView view={item.view} />
                 <span>{item.label}</span>
