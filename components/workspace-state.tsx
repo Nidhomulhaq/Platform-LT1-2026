@@ -86,6 +86,17 @@ export interface EventScheduleItem {
   endTime: string;
 }
 
+export interface TrainingLog {
+  id: string;
+  teamId: string;
+  createdBy: string | null;
+  trainingDate: string;
+  evidenceUrl: string;
+  createdAt: string;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+}
+
 export interface JudgeAssignment {
   id: string;
   juriId: string;
@@ -124,6 +135,7 @@ export interface WorkspaceData {
   judgeAssignments: JudgeAssignment[];
   panitiaAssignments: PanitiaAssignment[];
   eventSchedules: EventScheduleItem[];
+  trainingLogs: TrainingLog[];
   competitions: Competition[];
   scores: ScoreRecord[];
   submissions: Record<string, SubmissionRecord>;
@@ -498,6 +510,7 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
   judgeAssignments: [],
   panitiaAssignments: [],
   eventSchedules: [],
+  trainingLogs: [],
   competitions: COMPETITIONS,
   scores: scoreRecords,
   submissions: {
@@ -531,6 +544,7 @@ const EMPTY_WORKSPACE_DATA: WorkspaceData = {
   judgeAssignments: [],
   panitiaAssignments: [],
   eventSchedules: [],
+  trainingLogs: [],
   competitions: [],
   scores: [],
   submissions: {},
@@ -559,6 +573,7 @@ async function loadSupabaseWorkspace(
     submissionsResult,
     attendanceResult,
     settingsResult,
+    trainingLogsResult,
   ] = await Promise.all([
     userId
     ? supabase
@@ -590,6 +605,13 @@ async function loadSupabaseWorkspace(
       ? supabase.from("attendance").select("*")
       : Promise.resolve({ data: [], error: null }),
     supabase.from("event_settings").select("*").eq("id", true).maybeSingle(),
+    userId
+      ? supabase
+          .from("training_logs")
+          .select("*")
+          .order("training_date", { ascending: false })
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
   const results = [
     profileResult,
@@ -604,6 +626,7 @@ async function loadSupabaseWorkspace(
     submissionsResult,
     attendanceResult,
     settingsResult,
+    trainingLogsResult,
   ];
   for (const result of results) {
     if (result.error) throw result.error;
@@ -694,6 +717,16 @@ async function loadSupabaseWorkspace(
         startTime: schedule.start_time.slice(0, 5),
         endTime: schedule.end_time.slice(0, 5),
       })),
+      trainingLogs: (trainingLogsResult.data ?? []).map((log) => ({
+        id: log.id,
+        teamId: log.team_id,
+        createdBy: log.created_by,
+        trainingDate: log.training_date,
+        evidenceUrl: log.evidence_url,
+        createdAt: log.created_at,
+        confirmedAt: log.confirmed_at,
+        confirmedBy: log.confirmed_by,
+      })),
       competitions: (competitionsResult.data ?? []).map((competition) => ({
         id: competition.id,
         title: competition.title,
@@ -762,6 +795,8 @@ interface WorkspaceContextValue {
   createEventSchedule: (
     schedule: Omit<EventScheduleItem, "id">,
   ) => Promise<void>;
+  createTrainingLog: (teamId: string, evidenceUrl: string) => Promise<void>;
+  confirmTrainingLog: (trainingLogId: string) => Promise<void>;
   updateEventSchedule: (
     scheduleId: string,
     schedule: Omit<EventScheduleItem, "id">,
@@ -925,6 +960,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("pageshow", refreshOnForeground);
     };
   }, [authReady, refreshRemoteData, session, supabase]);
+
+  useEffect(() => {
+    if (!supabase || !session || profile?.role !== "operator") return;
+
+    const channel = supabase
+      .channel("operator-training-logs")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "training_logs" },
+        () => void refreshRemoteData(session.user.id),
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error(
+            "Langganan Realtime laporan latihan gagal.",
+            status,
+          );
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [profile?.role, refreshRemoteData, session, supabase]);
 
   const requireClient = () => {
     if (!supabase) throw new Error("Konfigurasi Supabase belum tersedia.");
@@ -1270,6 +1329,57 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setData((current) => ({
           ...current,
           eventSchedules: [...current.eventSchedules, nextSchedule],
+        }));
+      },
+      createTrainingLog: async (teamId, evidenceUrl) => {
+        if (!supabase || !session) {
+          throw new Error("Masuk dengan akun pendamping untuk mencatat latihan.");
+        }
+        const { data: saved, error } = await requireClient()
+          .from("training_logs")
+          .insert({
+            team_id: teamId,
+            created_by: session.user.id,
+            evidence_url: evidenceUrl,
+          })
+          .select("*")
+          .single();
+        if (error) throw error;
+        const nextLog: TrainingLog = {
+          id: saved.id,
+          teamId: saved.team_id,
+          createdBy: saved.created_by,
+          trainingDate: saved.training_date,
+          evidenceUrl: saved.evidence_url,
+          createdAt: saved.created_at,
+          confirmedAt: saved.confirmed_at,
+          confirmedBy: saved.confirmed_by,
+        };
+        setData((current) => ({
+          ...current,
+          trainingLogs: [nextLog, ...current.trainingLogs],
+        }));
+      },
+      confirmTrainingLog: async (trainingLogId) => {
+        const { data: confirmedAt, error } = await requireClient().rpc(
+          "confirm_training_log",
+          { target_log_id: trainingLogId },
+        );
+        if (error) throw error;
+        if (!confirmedAt) {
+          throw new Error("Konfirmasi latihan tidak berhasil dicatat.");
+        }
+        setData((current) => ({
+          ...current,
+          trainingLogs: current.trainingLogs.map((log) =>
+            log.id === trainingLogId
+              ? {
+                  ...log,
+                  confirmedAt,
+                  confirmedBy: session?.user.id ?? null,
+                }
+              : log,
+          ),
         }));
       },
       updateEventSchedule: async (scheduleId, schedule) => {

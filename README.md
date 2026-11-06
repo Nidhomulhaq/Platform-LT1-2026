@@ -95,6 +95,20 @@ dan jalankan hasilnya memakai `npm run start`.
     mengubah, dan menghapus jadwal melalui ruang kerja masing-masing. Peserta dan
     Pendamping Regu dapat melihat jadwal melalui `/schedule`; waktu yang
     bertumpang tindih pada tanggal yang sama ditolak oleh aplikasi dan database.
+11. Jalankan migration
+    [`supabase/migrations/20261106112430_training_logs.sql`](./supabase/migrations/20261106112430_training_logs.sql)
+    untuk menambahkan catatan latihan berbasis tautan Google Drive.
+12. Jalankan berurutan
+    [`supabase/migrations/20261106121603_training_log_review.sql`](./supabase/migrations/20261106121603_training_log_review.sql),
+    [`supabase/migrations/20261106122944_restrict_training_log_confirmation.sql`](./supabase/migrations/20261106122944_restrict_training_log_confirmation.sql),
+    dan [`supabase/migrations/20261106123143_index_training_logs.sql`](./supabase/migrations/20261106123143_index_training_logs.sql)
+    untuk menambahkan konfirmasi operator, pembaruan laporan melalui Realtime,
+    dan indeks akses. Peserta hanya dapat membaca catatan regunya; pendamping
+    dapat mengirim catatan untuk regu yang ditugaskan. Bukti latihan diunggah ke
+    Google Drive secara terpisah, lalu tautan HTTPS-nya ditempel pada formulir.
+    Pastikan izin berkas Drive mengizinkan operator dan anggota regu membukanya.
+    Operator memantau laporan hari ini di `/operator/training`; ekspor XLS
+    harian, mingguan, dan bulanan hanya berisi catatan yang sudah dikonfirmasi.
 
 Setelah Operator membuat akun Pendamping Regu, tentukan pangkalan saat pembuatan
 akun dan tetapkan satu regu melalui `/operator/accounts`. Pendamping masuk ke
@@ -196,7 +210,10 @@ preview.
 - `/juri` — simpan draf dan kirim nilai untuk ditinjau.
 - `/panitia` — rilis tugas dan catat kehadiran regu.
 - `/pendamping` — daftarkan peserta ke regu yang ditugaskan dan bagikan kredensial sementara.
+- `/pendamping/training` — catat latihan regu dan unduh kalender pekanan sebagai PNG.
+- `/training` — kalender serta riwayat latihan read-only untuk peserta.
 - `/operator` — ringkasan kegiatan.
+- `/operator/training` — tinjau laporan latihan harian dan unduh rekap XLS terkonfirmasi.
 - `/operator/accounts` — buat akun, atur role/regu dan Pinru, nonaktifkan akun,
   atau mulai reset kata sandi.
 - `/operator/scores` — setujui nilai atau minta revisi.

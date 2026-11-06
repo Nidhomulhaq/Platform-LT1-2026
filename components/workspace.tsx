@@ -6,6 +6,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowRight,
+  Activity,
   Award,
   Bell,
   BookOpen,
@@ -21,6 +22,7 @@ import {
   Clock3,
   Compass,
   Download,
+  ExternalLink,
   FileCheck2,
   FileText,
   Flag,
@@ -59,6 +61,7 @@ import {
   type School,
   type Team,
   type EventScheduleItem,
+  type TrainingLog,
   useWorkspace,
 } from "@/components/workspace-state";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -86,6 +89,8 @@ type View =
   | "juriDashboard"
   | "panitiaDashboard"
   | "pendampingDashboard"
+  | "training"
+  | "trainingReports"
   | "juri"
   | "panitia"
   | "pendamping"
@@ -116,6 +121,8 @@ const viewTitles: Record<View, string> = {
   juriDashboard: "Dasbor juri",
   panitiaDashboard: "Dasbor panitia",
   pendampingDashboard: "Dasbor pendamping",
+  training: "Latihan regu",
+  trainingReports: "Pengawasan latihan",
   juri: "Input nilai juri",
   panitia: "Kegiatan & kehadiran",
   pendamping: "Pendaftaran peserta",
@@ -181,6 +188,9 @@ function IconForView({ view }: { view: View }) {
       return <CalendarCheck {...props} />;
     case "pendamping":
       return <UserRound {...props} />;
+    case "training":
+    case "trainingReports":
+      return <Activity {...props} />;
     case "verify":
       return <ShieldCheck {...props} />;
     case "login":
@@ -321,6 +331,7 @@ const participantNavigation: {
   { view: "scan", label: "Scan tugas", href: "/scan-task" },
   { view: "teamScores", label: "Rekap nilai", href: "/score-recap" },
   { view: "schedule", label: "Jadwal kegiatan", href: "/schedule" },
+  { view: "training", label: "Latihan regu", href: "/training" },
   { view: "profile", label: "Profil", href: "/profile" },
 ];
 
@@ -423,6 +434,11 @@ function workspaceNavigation(
         href: "/operator/panitia-assignments",
       },
       { view: "publication", label: "Publikasi", href: "/operator/publication" },
+      {
+        view: "trainingReports",
+        label: "Pengawasan latihan",
+        href: "/operator/training",
+      },
     ];
   }
 
@@ -457,6 +473,7 @@ function workspaceNavigation(
       label: "Pendaftaran peserta",
       href: "/pendamping",
     },
+    { view: "training", label: "Latihan regu", href: "/pendamping/training" },
   ];
 }
 
@@ -473,6 +490,8 @@ const workspaceMenuDescriptions: Partial<Record<View, string>> = {
   judgeAssignments: "Tentukan juri untuk setiap mata lomba.",
   panitiaAssignments: "Atur penugasan panitia di setiap pos.",
   publication: "Kelola publikasi papan skor dan sertifikat.",
+  training: "Lihat kalender dan catatan latihan regu.",
+  trainingReports: "Konfirmasi latihan dan unduh laporan terverifikasi.",
   operatorSchedule: "Susun rundown kegiatan dan penanggung jawabnya.",
   panitiaSchedule: "Susun rundown kegiatan dan penanggung jawabnya.",
   schedule: "Lihat urutan waktu kegiatan lomba.",
@@ -545,7 +564,8 @@ function WorkspaceFrame({
     view === "judgeAssignments" ||
     view === "panitiaAssignments" ||
     view === "publication" ||
-    view === "operatorSchedule"
+    view === "operatorSchedule" ||
+    view === "trainingReports"
       ? "operator"
       : view === "juri" || view === "juriDashboard"
         ? "juri"
@@ -2258,6 +2278,677 @@ ${qrMark(220)}${qrMark(730)}
     console.error("Gagal membuat sertifikat LT-1.", error);
     notify("Sertifikat gagal dibuat. Coba lagi atau hubungi operator.", true);
   }
+}
+
+type TrainingReportPeriod = "daily" | "weekly" | "monthly";
+
+function jakartaDate(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function addDateDays(date: string, days: number): string {
+  const shifted = new Date(`${date}T00:00:00.000Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function mondayOfWeek(date: string): string {
+  const day = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+  return addDateDays(date, -((day + 6) % 7));
+}
+
+function formatTrainingDate(date: string, dateStyle: "long" | "full" = "long") {
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle,
+    timeZone: "Asia/Jakarta",
+  }).format(new Date(`${date}T12:00:00+07:00`));
+}
+
+function formatTrainingTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function reportDateRange(period: TrainingReportPeriod, today: string) {
+  if (period === "daily") {
+    return {
+      start: today,
+      end: today,
+      label: `Harian · ${formatTrainingDate(today)}`,
+    };
+  }
+  if (period === "weekly") {
+    const start = mondayOfWeek(today);
+    const end = addDateDays(start, 6);
+    return {
+      start,
+      end,
+      label: `Mingguan · ${formatTrainingDate(start)} – ${formatTrainingDate(end)}`,
+    };
+  }
+  const start = `${today.slice(0, 7)}-01`;
+  const nextMonth = new Date(`${today.slice(0, 7)}-01T00:00:00.000Z`);
+  nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+  const end = addDateDays(nextMonth.toISOString().slice(0, 10), -1);
+  return {
+    start,
+    end,
+    label: `Bulanan · ${new Intl.DateTimeFormat("id-ID", {
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Jakarta",
+    }).format(new Date(`${start}T12:00:00+07:00`))}`,
+  };
+}
+
+function createTrainingReportWorkbook(
+  logs: TrainingLog[],
+  teams: Team[],
+  periodLabel: string,
+) {
+  const rows = [
+    ["Regu", "Tanggal", "Pukul", "Link bukti latihan", "Dikonfirmasi pada"],
+    ...logs.map((log) => [
+      `Regu ${teams.find((team) => team.id === log.teamId)?.name ?? "Tidak diketahui"}`,
+      formatTrainingDate(log.trainingDate),
+      formatTrainingTime(log.createdAt),
+      log.evidenceUrl,
+      log.confirmedAt ? formatTrainingTime(log.confirmedAt) : "",
+    ]),
+  ];
+  const tableRows = rows
+    .map(
+      (row) =>
+        `<Row>${row
+          .map(
+            (cell) =>
+              `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`,
+          )
+          .join("")}</Row>`,
+    )
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="${escapeXml(periodLabel.slice(0, 31))}"><Table>${tableRows}</Table></Worksheet></Workbook>`;
+}
+
+function TrainingWorkspace({ notify }: { notify: Notify }) {
+  const {
+    data,
+    profile,
+    currentUserId,
+    createTrainingLog,
+    isConnected,
+  } = useWorkspace();
+  const companionTeam = data.teams.find(
+    (team) => team.pendampingId === currentUserId,
+  );
+  const participantTeamId = data.participants.find(
+    (participant) => participant.id === currentUserId,
+  )?.teamId;
+  const team =
+    profile?.role === "pendamping_regu"
+      ? companionTeam
+      : data.teams.find((item) => item.id === participantTeamId);
+  const teamLogs = React.useMemo(
+    () =>
+      data.trainingLogs
+        .filter((log) => log.teamId === team?.id)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    [data.trainingLogs, team?.id],
+  );
+  const [now, setNow] = React.useState(() => new Date());
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+  const today = jakartaDate(now);
+  const weekStart = mondayOfWeek(today);
+  const weekDates = React.useMemo(
+    () => Array.from({ length: 7 }, (_, index) => addDateDays(weekStart, index)),
+    [weekStart],
+  );
+  const datesWithLogs = React.useMemo(
+    () => new Set(teamLogs.map((log) => log.trainingDate)),
+    [teamLogs],
+  );
+  const dateLabels = React.useMemo(
+    () =>
+      new Intl.DateTimeFormat("id-ID", {
+        weekday: "short",
+        timeZone: "Asia/Jakarta",
+      }),
+    [],
+  );
+  const [evidenceUrl, setEvidenceUrl] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [selectedDate, setSelectedDate] = React.useState(today);
+  const [showCalendarImage, setShowCalendarImage] = React.useState(false);
+  const [calendarImage, setCalendarImage] = React.useState("");
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const closeCalendarButtonRef = React.useRef<HTMLButtonElement>(null);
+
+  React.useEffect(() => {
+    if (!showCalendarImage) return;
+    closeCalendarButtonRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowCalendarImage(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showCalendarImage]);
+
+  React.useEffect(() => {
+    if (!showCalendarImage || !team || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      notify("Kalender PNG tidak dapat dibuat di peramban ini.", true);
+      setShowCalendarImage(false);
+      return;
+    }
+
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string, fallback: string) =>
+      styles.getPropertyValue(name).trim() || fallback;
+    const background = color("--surface", "#ffffff");
+    const text = color("--text", "#0d1b13");
+    const muted = color("--muted", "#4b5563");
+    const border = color("--border", "#e2e9e5");
+    const accent = color("--accent", "#1b7a3e");
+    const positiveBackground = color("--positive-bg", "#dcfce7");
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = text;
+    context.font = "600 34px Segoe UI, Arial, sans-serif";
+    context.fillText(`Regu ${team.name}`, 44, 66);
+    context.fillStyle = muted;
+    context.font = "18px Segoe UI, Arial, sans-serif";
+    context.fillText(
+      `${formatTrainingDate(weekDates[0])} – ${formatTrainingDate(weekDates[6])}`,
+      44,
+      100,
+    );
+
+    const cardWidth = 112;
+    const gap = 14;
+    const left = 44;
+    const top = 140;
+    weekDates.forEach((date, index) => {
+      const x = left + index * (cardWidth + gap);
+      context.strokeStyle = border;
+      context.lineWidth = 2;
+      context.strokeRect(x, top, cardWidth, 190);
+      context.fillStyle = muted;
+      context.font = "16px Segoe UI, Arial, sans-serif";
+      context.textAlign = "center";
+      context.fillText(dateLabels.format(new Date(`${date}T12:00:00+07:00`)), x + cardWidth / 2, top + 36);
+      context.fillStyle = text;
+      context.font = "600 30px Segoe UI, Arial, sans-serif";
+      context.fillText(date.slice(8), x + cardWidth / 2, top + 82);
+      if (datesWithLogs.has(date)) {
+        context.fillStyle = positiveBackground;
+        context.beginPath();
+        context.arc(x + cardWidth / 2, top + 136, 25, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = accent;
+        context.font = "600 25px Segoe UI, Arial, sans-serif";
+        context.fillText("✓", x + cardWidth / 2, top + 145);
+        context.fillStyle = text;
+        context.font = "14px Segoe UI, Arial, sans-serif";
+        context.fillText("Latihan", x + cardWidth / 2, top + 178);
+      } else {
+        context.fillStyle = muted;
+        context.font = "14px Segoe UI, Arial, sans-serif";
+        context.fillText("Belum ada", x + cardWidth / 2, top + 145);
+        context.fillText("catatan", x + cardWidth / 2, top + 166);
+      }
+    });
+    context.textAlign = "left";
+    context.fillStyle = muted;
+    context.font = "14px Segoe UI, Arial, sans-serif";
+    context.fillText("Kalender latihan LT-1 · Asia/Jakarta", 44, 390);
+    setCalendarImage(canvas.toDataURL("image/png"));
+  }, [
+    dateLabels,
+    datesWithLogs,
+    notify,
+    showCalendarImage,
+    team,
+    weekDates,
+  ]);
+
+  const submitTrainingLog = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!team) return;
+    let url: URL;
+    try {
+      url = new URL(evidenceUrl.trim());
+    } catch {
+      notify("Masukkan tautan Google Drive yang valid.", true);
+      return;
+    }
+    if (
+      url.protocol !== "https:" ||
+      !["drive.google.com", "docs.google.com"].includes(url.hostname)
+    ) {
+      notify("Gunakan tautan HTTPS dari drive.google.com atau docs.google.com.", true);
+      return;
+    }
+    setSaving(true);
+    try {
+      await createTrainingLog(team.id, url.toString());
+      setEvidenceUrl("");
+      notify("Catatan latihan berhasil disimpan.");
+    } catch (error) {
+      console.error("Gagal menyimpan catatan latihan.", error);
+      notify("Catatan latihan gagal disimpan. Pastikan tautan Drive dapat dibagikan.", true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const downloadCalendar = () => {
+    if (!calendarImage || !team) return;
+    const anchor = document.createElement("a");
+    anchor.href = calendarImage;
+    anchor.download = `kalender-latihan-${team.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")}-${weekStart}.png`;
+    anchor.click();
+  };
+
+  return (
+    <>
+      <PageHeading
+        title={team ? `Latihan Regu ${team.name}` : "Latihan regu"}
+        description="Kalender latihan pekan ini dan catatan bukti kegiatan regu."
+      />
+      {!team ? (
+        <div className="empty-state panel">
+          <CalendarDays aria-hidden="true" />
+          <strong>Regu belum ditetapkan</strong>
+          <p>
+            {profile?.role === "pendamping_regu"
+              ? "Minta operator menugaskan akun pendamping ke regu."
+              : "Akun peserta belum dipetakan ke regu oleh operator."}
+          </p>
+        </div>
+      ) : (
+        <>
+          <section className="panel panel-pad training-calendar-section">
+            <div className="section-heading">
+              <div>
+                <h2>Pekan ini</h2>
+                <p>
+                  {formatTrainingDate(weekDates[0])} –{" "}
+                  {formatTrainingDate(weekDates[6])}
+                </p>
+              </div>
+              <span className="role-chip">Waktu Asia/Jakarta</span>
+            </div>
+            <div className="training-calendar" aria-label="Kalender latihan pekan ini">
+              {weekDates.map((date) => {
+                const hasLog = datesWithLogs.has(date);
+                const isToday = date === today;
+                return (
+                  <button
+                    className={`training-day${isToday ? " is-today" : ""}${hasLog ? " has-log" : ""}${selectedDate === date ? " is-selected" : ""}`}
+                    key={date}
+                    type="button"
+                    aria-label={`${dateLabels.format(new Date(`${date}T12:00:00+07:00`))}, ${formatTrainingDate(date)}${hasLog ? ", ada catatan latihan" : ", belum ada catatan latihan"}. Buka kalender PNG.`}
+                    onClick={() => {
+                      setSelectedDate(date);
+                      setCalendarImage("");
+                      setShowCalendarImage(true);
+                    }}
+                  >
+                    <span>{dateLabels.format(new Date(`${date}T12:00:00+07:00`))}</span>
+                    <strong>{date.slice(8)}</strong>
+                    {hasLog ? (
+                      <CheckCircle2 aria-label="Ada catatan latihan" />
+                    ) : (
+                      <span className="training-day-empty">—</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="training-calendar-hint">
+              Pilih tanggal untuk membuka dan mengunduh kalender PNG satu pekan.
+            </p>
+          </section>
+
+          {profile?.role === "pendamping_regu" ? (
+            <section className="panel panel-pad training-entry">
+              <SectionHeading
+                title="Catat latihan"
+                detail="Tanggal mengikuti hari pengisian. Tempel tautan bukti yang dibagikan melalui Google Drive."
+              />
+              <form className="form-row training-entry-form" onSubmit={(event) => void submitTrainingLog(event)}>
+                <label>
+                  <span className="field-label">Tanggal pengisian</span>
+                  <input
+                    className="field"
+                    readOnly
+                    value={formatTrainingDate(today, "full")}
+                    aria-label="Tanggal pengisian latihan"
+                  />
+                </label>
+                <label>
+                  <span className="field-label">Tautan bukti Google Drive</span>
+                  <input
+                    className="field"
+                    type="url"
+                    inputMode="url"
+                    autoComplete="url"
+                    placeholder="https://drive.google.com/…"
+                    value={evidenceUrl}
+                    onChange={(event) => setEvidenceUrl(event.target.value)}
+                    required
+                  />
+                </label>
+                <button className="button" type="submit" disabled={saving || !isConnected}>
+                  {saving ? "Menyimpan…" : "Simpan catatan"}
+                </button>
+              </form>
+              <p className="field-hint">
+                Pastikan izin tautan Drive memungkinkan operator dan anggota regu membukanya.
+              </p>
+            </section>
+          ) : (
+            <div className="notice training-read-only" role="note">
+              <LockKeyhole aria-hidden="true" />
+              <p>Anda dapat melihat catatan latihan regu ini. Pengisian hanya tersedia bagi pendamping regu.</p>
+            </div>
+          )}
+
+          <section className="panel panel-pad training-log-list">
+            <SectionHeading
+              title="Catatan latihan"
+              detail={`${teamLogs.length} catatan · tanda centang pada kalender menunjukkan hari latihan tercatat.`}
+            />
+            {teamLogs.length ? (
+              <div className="activity-list">
+                {teamLogs.map((log) => (
+                  <div className="activity-row training-log-row" key={log.id}>
+                    <span className="activity-copy">
+                      <strong>{formatTrainingDate(log.trainingDate, "full")}</strong>
+                      <span>Diisi pukul {formatTrainingTime(log.createdAt)} WIB</span>
+                    </span>
+                    <div className="training-log-actions">
+                      <a
+                        className="button button-secondary button-small"
+                        href={log.evidenceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink aria-hidden="true" />
+                        Buka bukti
+                      </a>
+                      {log.confirmedAt ? (
+                        <span className="status-pill is-approved">
+                          <CheckCircle2 aria-hidden="true" />
+                          Terkonfirmasi
+                        </span>
+                      ) : (
+                        <span className="status-pill is-pending">Menunggu konfirmasi</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Activity aria-hidden="true" />
+                <strong>Belum ada catatan latihan</strong>
+                <p>Catatan yang dikirim pendamping akan tampil di sini.</p>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      <canvas
+        className="training-calendar-canvas"
+        ref={canvasRef}
+        width={920}
+        height={420}
+        aria-hidden="true"
+      />
+      {showCalendarImage ? (
+        <div
+          className="training-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowCalendarImage(false);
+          }}
+        >
+          <section
+            className="training-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="training-calendar-dialog-title"
+          >
+            <div className="section-heading">
+              <div>
+                <h2 id="training-calendar-dialog-title">Kalender latihan Regu {team?.name}</h2>
+                <p>{formatTrainingDate(weekStart)} – {formatTrainingDate(weekDates[6])}</p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Tutup kalender"
+                ref={closeCalendarButtonRef}
+                onClick={() => setShowCalendarImage(false)}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+            {calendarImage ? (
+              <img
+                className="training-calendar-image"
+                src={calendarImage}
+                alt={`Kalender latihan satu pekan Regu ${team?.name}, tanggal ${formatTrainingDate(weekStart)} sampai ${formatTrainingDate(weekDates[6])}`}
+              />
+            ) : (
+              <p className="inline-note" role="status">Menyiapkan gambar kalender…</p>
+            )}
+            <div className="training-dialog-actions">
+              <button
+                className="button"
+                type="button"
+                disabled={!calendarImage}
+                onClick={downloadCalendar}
+              >
+                <Download aria-hidden="true" />
+                Unduh PNG
+              </button>
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={() => setShowCalendarImage(false)}
+              >
+                Tutup
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function TrainingReports({ notify }: { notify: Notify }) {
+  const { data, confirmTrainingLog, dataRefreshError } = useWorkspace();
+  const [today, setToday] = React.useState(() => jakartaDate());
+  const [period, setPeriod] = React.useState<TrainingReportPeriod>("daily");
+  const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => setToday(jakartaDate()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const todayLogs = data.trainingLogs
+    .filter((log) => log.trainingDate === today)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const range = reportDateRange(period, today);
+  const exportLogs = data.trainingLogs
+    .filter(
+      (log) =>
+        log.confirmedAt !== null &&
+        log.trainingDate >= range.start &&
+        log.trainingDate <= range.end,
+    )
+    .sort((left, right) => {
+      const dateOrder = left.trainingDate.localeCompare(right.trainingDate);
+      return dateOrder || left.createdAt.localeCompare(right.createdAt);
+    });
+
+  const downloadReport = () => {
+    const workbook = createTrainingReportWorkbook(exportLogs, data.teams, range.label);
+    const file = new Blob([`\uFEFF${workbook}`], {
+      type: "application/vnd.ms-excel;charset=utf-8",
+    });
+    const url = URL.createObjectURL(file);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `laporan-latihan-${period}-${range.start}.xls`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify(`Laporan ${period} berisi ${exportLogs.length} catatan terkonfirmasi.`);
+  };
+
+  const confirmLog = async (log: TrainingLog) => {
+    setConfirmingId(log.id);
+    try {
+      await confirmTrainingLog(log.id);
+      notify(`Latihan Regu ${data.teams.find((team) => team.id === log.teamId)?.name ?? ""} terkonfirmasi.`);
+    } catch (error) {
+      console.error("Gagal mengonfirmasi laporan latihan.", error);
+      notify("Konfirmasi gagal disimpan. Muat ulang data dan coba lagi.", true);
+    } finally {
+      setConfirmingId(null);
+    }
+  };
+
+  return (
+    <>
+      <PageHeading
+        title="Pengawasan latihan"
+        description="Tinjau laporan harian secara langsung dan unduh rekap yang telah dikonfirmasi."
+      />
+      {dataRefreshError ? (
+        <div className="notice" role="alert">
+          <CircleHelp aria-hidden="true" />
+          <p>{dataRefreshError}</p>
+        </div>
+      ) : null}
+      <section className="panel panel-pad training-reports">
+        <SectionHeading
+          title="Laporan hari ini"
+          detail={`${formatTrainingDate(today, "full")} · pembaruan otomatis`}
+          action={<span className="role-chip">{todayLogs.length} laporan</span>}
+        />
+        {todayLogs.length ? (
+          <div className="table-scroll">
+            <table className="data-table training-report-table">
+              <thead>
+                <tr>
+                  <th>Regu</th>
+                  <th>Tanggal</th>
+                  <th>Pukul</th>
+                  <th>Bukti latihan</th>
+                  <th>Konfirmasi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todayLogs.map((log) => {
+                  const logTeam = data.teams.find((team) => team.id === log.teamId);
+                  return (
+                    <tr key={log.id}>
+                      <td><span className="table-primary">Regu {logTeam?.name ?? "Tidak diketahui"}</span></td>
+                      <td>{formatTrainingDate(log.trainingDate)}</td>
+                      <td>{formatTrainingTime(log.createdAt)} WIB</td>
+                      <td>
+                        <a className="text-link" href={log.evidenceUrl} target="_blank" rel="noopener noreferrer">
+                          Buka tautan <ExternalLink aria-hidden="true" />
+                        </a>
+                      </td>
+                      <td>
+                        {log.confirmedAt ? (
+                          <span className="status-pill is-approved">
+                            <CheckCircle2 aria-hidden="true" />
+                            Terkonfirmasi
+                          </span>
+                        ) : (
+                          <button
+                            className="button button-small"
+                            type="button"
+                            disabled={confirmingId !== null}
+                            onClick={() => void confirmLog(log)}
+                          >
+                            {confirmingId === log.id ? "Menyimpan…" : "Konfirmasi"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <Activity aria-hidden="true" />
+            <strong>Belum ada laporan hari ini</strong>
+            <p>Laporan baru akan muncul otomatis setelah pendamping mencatat latihan.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel panel-pad training-report-download">
+        <SectionHeading
+          title="Unduh laporan terkonfirmasi"
+          detail="Berkas XLS hanya berisi latihan yang sudah dikonfirmasi operator."
+        />
+        <div className="training-export-controls">
+          <label>
+            <span className="field-label">Periode laporan</span>
+            <select
+              className="field"
+              value={period}
+              onChange={(event) => setPeriod(event.target.value as TrainingReportPeriod)}
+            >
+              <option value="daily">Harian · hari ini</option>
+              <option value="weekly">Mingguan · Senin–Minggu</option>
+              <option value="monthly">Bulanan · bulan ini</option>
+            </select>
+          </label>
+          <p className="training-export-summary">
+            {range.label} · {exportLogs.length} catatan terkonfirmasi
+          </p>
+          <button className="button" type="button" onClick={downloadReport}>
+            <Download aria-hidden="true" />
+            Unduh XLS
+          </button>
+        </div>
+        {!exportLogs.length ? (
+          <p className="field-hint">Belum ada catatan terkonfirmasi pada periode ini. Berkas hanya akan memuat judul kolom.</p>
+        ) : null}
+      </section>
+    </>
+  );
 }
 
 function OperatorDashboard() {
@@ -7428,10 +8119,10 @@ function EventCoordination({ notify }: { notify: Notify }) {
       const [toast, setToast] = React.useState<{ message: string; error: boolean } | null>(
         null,
       );
-      const notify: Notify = (message, isError = false) => {
+      const notify = React.useCallback<Notify>((message, isError = false) => {
         setToast({ message, error: isError });
         window.setTimeout(() => setToast(null), 3600);
-      };
+      }, []);
 
       const isAuthView = view === "login";
       const requiredRole: Role | null =
@@ -7444,7 +8135,8 @@ function EventCoordination({ notify }: { notify: Notify }) {
         view === "judgeAssignments" ||
         view === "panitiaAssignments" ||
         view === "publication" ||
-        view === "operatorSchedule"
+        view === "operatorSchedule" ||
+        view === "trainingReports"
           ? "operator"
           : view === "juri" || view === "juriDashboard"
             ? "juri"
@@ -7472,6 +8164,8 @@ function EventCoordination({ notify }: { notify: Notify }) {
         } else if (
           profile &&
           ((requiredRole && profile.role !== requiredRole) ||
+            (view === "training" &&
+              !["peserta", "pendamping_regu"].includes(profile.role)) ||
             (view === "schedule" &&
               !["peserta", "pendamping_regu"].includes(profile.role)))
         ) {
@@ -7543,6 +8237,8 @@ function EventCoordination({ notify }: { notify: Notify }) {
         }
         if (
           (requiredRole && profile.role !== requiredRole) ||
+          (view === "training" &&
+            !["peserta", "pendamping_regu"].includes(profile.role)) ||
           (view === "schedule" &&
             !["peserta", "pendamping_regu"].includes(profile.role))
         ) {
@@ -7607,6 +8303,12 @@ function EventCoordination({ notify }: { notify: Notify }) {
           break;
         case "publication":
           content = <PublicationSettings notify={notify} />;
+          break;
+        case "training":
+          content = <TrainingWorkspace notify={notify} />;
+          break;
+        case "trainingReports":
+          content = <TrainingReports notify={notify} />;
           break;
         case "schedule":
           content = <EventScheduleWorkspace canEdit={false} notify={notify} />;

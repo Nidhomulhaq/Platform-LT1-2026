@@ -1462,6 +1462,174 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
+.training-calendar-section,
+.training-entry,
+.training-log-list,
+.training-reports,
+.training-report-download {
+  margin-bottom: var(--gap);
+}
+
+.training-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(78px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.training-day {
+  display: grid;
+  min-height: 112px;
+  align-content: space-between;
+  justify-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  transition:
+    border-color var(--motion-ui) var(--ease-ui),
+    background-color var(--motion-ui) var(--ease-ui),
+    transform var(--motion-fast) var(--ease-ui);
+}
+
+.training-day:hover {
+  border-color: var(--control);
+  background: var(--surface-raised);
+  transform: translateY(-1px);
+}
+
+.training-day.is-today {
+  border-color: var(--accent);
+}
+
+.training-day.is-selected {
+  background: var(--accent-soft);
+}
+
+.training-day > span:first-child {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.training-day > strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.training-day > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--positive);
+}
+
+.training-day-empty {
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.training-calendar-hint,
+.training-entry .field-hint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.training-entry-form {
+  align-items: end;
+}
+
+.training-entry-form > label:first-child {
+  flex: 0.8;
+}
+
+.training-entry-form > label:nth-child(2) {
+  flex: 1.5;
+}
+
+.training-read-only {
+  margin-bottom: var(--gap);
+}
+
+.training-log-row {
+  flex-wrap: wrap;
+  padding: 12px 0;
+}
+
+.training-log-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.training-report-table {
+  min-width: 760px;
+}
+
+.training-export-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.training-export-controls > label {
+  width: min(100%, 260px);
+}
+
+.training-export-summary {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.training-calendar-canvas {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.training-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--overlay);
+}
+
+.training-dialog {
+  width: min(100%, 980px);
+  max-height: min(92vh, 760px);
+  overflow: auto;
+  padding: clamp(16px, 3vw, 28px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.training-calendar-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 18px 0;
+}
+
+.training-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .schedule-form-card {
   margin: 20px 0;
   padding: 20px;
@@ -1587,6 +1755,52 @@ textarea:focus-visible {
 }
 
 @media (max-width: 640px) {
+  .training-calendar-section,
+  .training-entry,
+  .training-log-list,
+  .training-reports,
+  .training-report-download {
+    padding: 16px;
+  }
+
+  .training-calendar {
+    grid-template-columns: repeat(7, 86px);
+  }
+
+  .training-day {
+    min-height: 100px;
+  }
+
+  .training-entry-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .training-entry-form > label:first-child,
+  .training-entry-form > label:nth-child(2) {
+    flex: auto;
+  }
+
+  .training-log-actions {
+    width: 100%;
+  }
+
+  .training-dialog-backdrop {
+    padding: 10px;
+  }
+
+  .training-dialog .section-heading {
+    align-items: flex-start;
+  }
+
+  .training-dialog-actions {
+    flex-direction: column;
+  }
+
+  .training-dialog-actions .button {
+    justify-content: center;
+  }
+
   .schedule-form-card {
     padding: 16px;
   }

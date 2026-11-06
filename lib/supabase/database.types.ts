@@ -111,6 +111,16 @@ export type Database = {
         submitted_at: string;
         updated_at: string;
       }>;
+      training_logs: Table<{
+        id: string;
+        team_id: string;
+        created_by: string | null;
+        training_date: string;
+        evidence_url: string;
+        created_at: string;
+        confirmed_at: string | null;
+        confirmed_by: string | null;
+      }>;
       team_members: Table<{
         id: string;
         team_id: string;
@@ -170,6 +180,10 @@ export type Database = {
       set_team_pendamping: {
         Args: { target_user_id: string; target_team_id: string | null };
         Returns: undefined;
+      };
+      confirm_training_log: {
+        Args: { target_log_id: string };
+        Returns: string;
       };
     };
     Enums: {
