@@ -502,6 +502,9 @@ textarea:focus-visible {
 
 .workspace-main-shell {
   margin-left: 0;
+}
+
+.workspace.has-bottom-navigation .workspace-main-shell {
   padding-bottom: 132px;
 }
 
@@ -3337,7 +3340,7 @@ textarea:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .workspace-main-shell {
+  .workspace.has-bottom-navigation .workspace-main-shell {
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
 
@@ -3415,7 +3418,7 @@ textarea:focus-visible {
     padding-left: 16px;
   }
 
-  .workspace-main-shell {
+  .workspace.has-bottom-navigation .workspace-main-shell {
     padding-bottom: calc(116px + env(safe-area-inset-bottom));
   }
 

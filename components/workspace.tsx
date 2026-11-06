@@ -579,6 +579,7 @@ function WorkspaceFrame({
             ? "pendamping_regu"
             : "peserta";
   const role: Role = isConnected ? profile?.role ?? "peserta" : routeRole;
+  const isDashboardPage = pathname === dashboardPathForRole(role);
 
   const roleOptions: { value: Role; label: string; path: string }[] = [
     { value: "peserta", label: "Peserta", path: "/dashboard" },
@@ -621,7 +622,7 @@ function WorkspaceFrame({
 
   return (
     <div
-      className={`workspace${isParticipant ? " participant-workspace" : ""}${menuOpen ? " has-open-sidebar" : ""}`}
+      className={`workspace${isParticipant ? " participant-workspace" : ""}${isDashboardPage ? " has-bottom-navigation" : ""}${menuOpen ? " has-open-sidebar" : ""}`}
     >
       {menuOpen ? (
         <button
@@ -778,30 +779,32 @@ function WorkspaceFrame({
         </div>
         <div className="content">{children}</div>
       </main>
-      <nav className="workspace-tab-bar" aria-label="Navigasi ruang kerja">
-        {bottomNavigation(role).map((item) => {
-          const active =
-            item.view === "participant"
-              ? pathname === item.href
-              : item.view === "scan"
-                ? pathname === item.href ||
-                  pathname.startsWith("/dashboard/submit/")
-                : pathname === item.href ||
-                  pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              className="workspace-tab"
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              aria-label={item.label}
-            >
-              <IconForView view={item.view} />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      {isDashboardPage ? (
+        <nav className="workspace-tab-bar" aria-label="Navigasi ruang kerja">
+          {bottomNavigation(role).map((item) => {
+            const active =
+              item.view === "participant"
+                ? pathname === item.href
+                : item.view === "scan"
+                  ? pathname === item.href ||
+                    pathname.startsWith("/dashboard/submit/")
+                  : pathname === item.href ||
+                    pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                className="workspace-tab"
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                aria-label={item.label}
+              >
+                <IconForView view={item.view} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      ) : null}
     </div>
   );
 }
