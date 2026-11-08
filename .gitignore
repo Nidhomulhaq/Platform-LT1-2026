@@ -7,3 +7,4 @@ coverage/
 sample-account-credentials-*.csv
 npm-debug.log*
 .agent/skills/taste-skill
+.agent/skills/taste-skill
