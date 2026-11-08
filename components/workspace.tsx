@@ -2970,6 +2970,7 @@ function TrainingReports({ notify }: { notify: Notify }) {
   } = useWorkspace();
   const [today, setToday] = React.useState(() => jakartaDate());
   const [period, setPeriod] = React.useState<TrainingReportPeriod>("daily");
+  const [historyDate, setHistoryDate] = React.useState("");
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
   React.useEffect(() => {
     const intervalId = window.setInterval(() => setToday(jakartaDate()), 60_000);
@@ -2979,6 +2980,11 @@ function TrainingReports({ notify }: { notify: Notify }) {
   const todayLogs = data.trainingLogs
     .filter((log) => log.trainingDate === today)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const historyLogs = historyDate
+    ? data.trainingLogs
+        .filter((log) => log.trainingDate === historyDate)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    : [];
   const range = reportDateRange(period, today);
   const exportLogs = data.trainingLogs
     .filter(
@@ -3143,6 +3149,133 @@ function TrainingReports({ notify }: { notify: Notify }) {
             <Activity aria-hidden="true" />
             <strong>Belum ada laporan hari ini</strong>
             <p>Laporan baru akan muncul otomatis setelah pendamping mencatat latihan.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel panel-pad training-history">
+        <SectionHeading
+          title="Riwayat latihan"
+          detail={
+            historyDate
+              ? `Catatan latihan ${formatTrainingDate(historyDate, "full")}.`
+              : "Pilih tanggal untuk melihat catatan latihan dari semua regu."
+          }
+          action={
+            historyDate ? (
+              <span className="role-chip">{historyLogs.length} laporan</span>
+            ) : null
+          }
+        />
+        <div className="training-history-controls">
+          <label>
+            <span className="field-label">Tanggal latihan</span>
+            <input
+              className="field"
+              type="date"
+              value={historyDate}
+              max={today}
+              onChange={(event) => setHistoryDate(event.target.value)}
+            />
+          </label>
+          {historyDate ? (
+            <p className="training-history-summary">
+              {historyLogs.length
+                ? `${historyLogs.length} laporan dari seluruh regu`
+                : "Belum ada laporan pada tanggal ini"}
+            </p>
+          ) : null}
+        </div>
+        {!historyDate ? (
+          <div className="empty-state">
+            <CalendarDays aria-hidden="true" />
+            <strong>Pilih tanggal riwayat</strong>
+            <p>Gunakan kalender di atas untuk melihat latihan yang dicatat pendamping.</p>
+          </div>
+        ) : historyLogs.length ? (
+          <div className="table-scroll">
+            <table className="data-table training-report-table training-history-table">
+              <thead>
+                <tr>
+                  <th>Regu</th>
+                  <th>Pendamping</th>
+                  <th>Pukul</th>
+                  <th>Bukti latihan</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyLogs.map((log) => {
+                  const logTeam = data.teams.find((team) => team.id === log.teamId);
+                  const companion = data.companions.find(
+                    (person) => person.id === log.createdBy,
+                  );
+                  return (
+                    <tr key={log.id}>
+                      <td>
+                        <span className="table-primary">
+                          Regu {logTeam?.name ?? "Tidak diketahui"}
+                        </span>
+                      </td>
+                      <td>{companion?.name ?? "Tidak diketahui"}</td>
+                      <td>{formatTrainingTime(log.createdAt)} WIB</td>
+                      <td>
+                        {log.evidencePath && log.evidenceUrl ? (
+                          <a
+                            className="training-evidence-link"
+                            href={log.evidenceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Image
+                              src={log.evidenceUrl}
+                              alt={`Foto bukti latihan Regu ${logTeam?.name ?? ""}`}
+                              width={640}
+                              height={480}
+                              unoptimized
+                            />
+                          </a>
+                        ) : log.evidenceUrl ? (
+                          <a
+                            className="text-link"
+                            href={log.evidenceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Buka tautan <ExternalLink aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <span className="field-hint">
+                            {log.evidenceDeletedAt
+                              ? "Foto sudah dihapus"
+                              : log.evidenceUrlError ?? "Tidak ada bukti"}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {log.confirmedAt ? (
+                          <span className="status-pill is-approved">
+                            <CheckCircle2 aria-hidden="true" />
+                            Terkonfirmasi
+                          </span>
+                        ) : (
+                          <span className="status-pill is-pending">
+                            <Clock3 aria-hidden="true" />
+                            Menunggu konfirmasi
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <Activity aria-hidden="true" />
+            <strong>Belum ada laporan pada tanggal ini</strong>
+            <p>Tidak ada catatan latihan pendamping untuk tanggal yang dipilih.</p>
           </div>
         )}
       </section>

@@ -77,6 +77,11 @@ export interface EventStaff {
   name: string;
 }
 
+export interface Companion {
+  id: string;
+  name: string;
+}
+
 export interface EventScheduleItem {
   id: string;
   title: string;
@@ -143,6 +148,7 @@ export interface WorkspaceData {
   participants: Participant[];
   judges: Judge[];
   eventStaff: EventStaff[];
+  companions: Companion[];
   judgeAssignments: JudgeAssignment[];
   panitiaAssignments: PanitiaAssignment[];
   eventSchedules: EventScheduleItem[];
@@ -518,6 +524,7 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
   participants: participantRecords,
   judges: [],
   eventStaff: [],
+  companions: [],
   judgeAssignments: [],
   panitiaAssignments: [],
   eventSchedules: [],
@@ -552,6 +559,7 @@ const EMPTY_WORKSPACE_DATA: WorkspaceData = {
   participants: [],
   judges: [],
   eventStaff: [],
+  companions: [],
   judgeAssignments: [],
   panitiaAssignments: [],
   eventSchedules: [],
@@ -737,6 +745,9 @@ async function loadSupabaseWorkspace(
         .map((person) => ({ id: person.id, name: person.full_name })),
       eventStaff: profileRows
         .filter((person) => person.role === "panitia")
+        .map((person) => ({ id: person.id, name: person.full_name })),
+      companions: profileRows
+        .filter((person) => person.role === "pendamping_regu")
         .map((person) => ({ id: person.id, name: person.full_name })),
       judgeAssignments: (judgeAssignmentsResult.data ?? []).map((assignment) => ({
         id: assignment.id,
