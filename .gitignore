@@ -6,3 +6,4 @@ coverage/
 !.env.example
 sample-account-credentials-*.csv
 npm-debug.log*
+.agent/skills/taste-skill
