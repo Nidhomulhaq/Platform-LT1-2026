@@ -2970,12 +2970,20 @@ function TrainingReports({ notify }: { notify: Notify }) {
   } = useWorkspace();
   const [today, setToday] = React.useState(() => jakartaDate());
   const [period, setPeriod] = React.useState<TrainingReportPeriod>("daily");
-  const [historyDate, setHistoryDate] = React.useState("");
+  const [historyDate, setHistoryDate] = React.useState(() => jakartaDate());
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
+  const previousToday = React.useRef(today);
   React.useEffect(() => {
     const intervalId = window.setInterval(() => setToday(jakartaDate()), 60_000);
     return () => window.clearInterval(intervalId);
   }, []);
+  React.useEffect(() => {
+    if (historyDate === previousToday.current) setHistoryDate(today);
+    previousToday.current = today;
+  }, [historyDate, today]);
+  const historyDates = Array.from({ length: 7 }, (_, index) =>
+    addDateDays(today, -index),
+  );
 
   const todayLogs = data.trainingLogs
     .filter((log) => log.trainingDate === today)
@@ -3156,20 +3164,42 @@ function TrainingReports({ notify }: { notify: Notify }) {
       <section className="panel panel-pad training-history">
         <SectionHeading
           title="Riwayat latihan"
-          detail={
-            historyDate
-              ? `Catatan latihan ${formatTrainingDate(historyDate, "full")}.`
-              : "Pilih tanggal untuk melihat catatan latihan dari semua regu."
-          }
-          action={
-            historyDate ? (
-              <span className="role-chip">{historyLogs.length} laporan</span>
-            ) : null
-          }
+          detail={`Catatan latihan ${formatTrainingDate(historyDate, "full")}.`}
+          action={<span className="role-chip">{historyLogs.length} laporan</span>}
         />
         <div className="training-history-controls">
-          <label>
-            <span className="field-label">Tanggal latihan</span>
+          <div
+            className="training-history-date-options"
+            role="group"
+            aria-label="Pilih tanggal riwayat latihan"
+          >
+            {historyDates.map((date, index) => {
+              const label =
+                index === 0
+                  ? "Hari ini"
+                  : index === 1
+                    ? "Kemarin"
+                    : formatTrainingDate(date, "long");
+              const logCount = data.trainingLogs.filter(
+                (log) => log.trainingDate === date,
+              ).length;
+              return (
+                <button
+                  className={`button button-secondary button-small training-history-date${historyDate === date ? " is-selected" : ""}`}
+                  key={date}
+                  type="button"
+                  aria-label={`${label}, ${logCount} laporan`}
+                  aria-pressed={historyDate === date}
+                  onClick={() => setHistoryDate(date)}
+                >
+                  <span>{label}</span>
+                  <strong>{logCount}</strong>
+                </button>
+              );
+            })}
+          </div>
+          <label className="training-history-custom-date">
+            <span className="field-label">Tanggal lainnya</span>
             <input
               className="field"
               type="date"
@@ -3178,21 +3208,13 @@ function TrainingReports({ notify }: { notify: Notify }) {
               onChange={(event) => setHistoryDate(event.target.value)}
             />
           </label>
-          {historyDate ? (
-            <p className="training-history-summary">
-              {historyLogs.length
-                ? `${historyLogs.length} laporan dari seluruh regu`
-                : "Belum ada laporan pada tanggal ini"}
-            </p>
-          ) : null}
+          <p className="training-history-summary">
+            {historyLogs.length
+              ? `${historyLogs.length} laporan dari seluruh regu`
+              : "Belum ada laporan pada tanggal ini"}
+          </p>
         </div>
-        {!historyDate ? (
-          <div className="empty-state">
-            <CalendarDays aria-hidden="true" />
-            <strong>Pilih tanggal riwayat</strong>
-            <p>Gunakan kalender di atas untuk melihat latihan yang dicatat pendamping.</p>
-          </div>
-        ) : historyLogs.length ? (
+        {historyLogs.length ? (
           <div className="table-scroll">
             <table className="data-table training-report-table training-history-table">
               <thead>
