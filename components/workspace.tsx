@@ -3281,10 +3281,22 @@ function TrainingReports({ notify }: { notify: Notify }) {
                             Terkonfirmasi
                           </span>
                         ) : (
-                          <span className="status-pill is-pending">
-                            <Clock3 aria-hidden="true" />
-                            Menunggu konfirmasi
-                          </span>
+                          <div className="training-confirmation-status">
+                            <span className="status-pill is-pending">
+                              <Clock3 aria-hidden="true" />
+                              Menunggu konfirmasi
+                            </span>
+                            <button
+                              className="button button-small"
+                              type="button"
+                              disabled={confirmingId !== null}
+                              onClick={() => void confirmLog(log)}
+                            >
+                              {confirmingId === log.id
+                                ? "Menyimpan…"
+                                : "Konfirmasi"}
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
