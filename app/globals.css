@@ -1483,8 +1483,8 @@ textarea:focus-visible {
 .training-calendar-section,
 .training-entry,
 .training-log-list,
-.training-reports,
 .training-history,
+.training-team-summary,
 .training-report-download {
   margin-bottom: var(--gap);
 }
@@ -1778,6 +1778,17 @@ textarea:focus-visible {
   min-width: 800px;
 }
 
+.training-team-summary-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.training-team-summary-table th:last-child,
+.training-team-summary-table td:last-child {
+  width: 180px;
+}
+
 .training-export-controls {
   display: flex;
   align-items: flex-end;
@@ -1998,8 +2009,8 @@ textarea:focus-visible {
   .training-calendar-section,
   .training-entry,
   .training-log-list,
-  .training-reports,
   .training-history,
+  .training-team-summary,
   .training-report-download {
     padding: 16px;
   }
@@ -3924,6 +3935,15 @@ textarea:focus-visible {
 
   .training-history-controls .field {
     min-height: 44px;
+  }
+
+  .training-team-summary-table th:last-child,
+  .training-team-summary-table td:last-child {
+    width: 120px;
+  }
+
+  .training-team-summary-table {
+    min-width: 0;
   }
 
   .training-report-table,

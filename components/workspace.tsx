@@ -2981,9 +2981,6 @@ function TrainingReports({ notify }: { notify: Notify }) {
     addDateDays(today, -index),
   );
 
-  const todayLogs = data.trainingLogs
-    .filter((log) => log.trainingDate === today)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   const historyLogs = historyDate
     ? data.trainingLogs
         .filter((log) => log.trainingDate === historyDate)
@@ -3001,6 +2998,16 @@ function TrainingReports({ notify }: { notify: Notify }) {
       const dateOrder = left.trainingDate.localeCompare(right.trainingDate);
       return dateOrder || left.createdAt.localeCompare(right.createdAt);
     });
+  const teamTrainingCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const log of data.trainingLogs) {
+      counts.set(log.teamId, (counts.get(log.teamId) ?? 0) + 1);
+    }
+    return data.teams.map((team) => ({
+      team,
+      count: counts.get(team.id) ?? 0,
+    }));
+  }, [data.teams, data.trainingLogs]);
 
   const downloadReport = () => {
     const workbook = createTrainingReportWorkbook(exportLogs, data.teams, range.label);
@@ -3051,7 +3058,7 @@ function TrainingReports({ notify }: { notify: Notify }) {
     <>
       <PageHeading
         title="Pengawasan latihan"
-        description="Tinjau laporan harian secara langsung dan unduh rekap yang telah dikonfirmasi."
+        description="Tinjau riwayat latihan, konfirmasi laporan, dan unduh rekap yang telah dikonfirmasi."
       />
       {dataRefreshError ? (
         <div className="notice" role="alert">
@@ -3059,126 +3066,6 @@ function TrainingReports({ notify }: { notify: Notify }) {
           <p>{dataRefreshError}</p>
         </div>
       ) : null}
-      <section className="panel panel-pad training-reports">
-        <SectionHeading
-          title="Laporan hari ini"
-          detail={`${formatTrainingDate(today, "full")} · pembaruan otomatis`}
-          action={<span className="role-chip">{todayLogs.length} laporan</span>}
-        />
-        {todayLogs.length ? (
-          <div className="table-scroll">
-            <table
-              className="data-table training-report-table"
-              role="table"
-              aria-label="Laporan latihan hari ini"
-            >
-              <thead className="sr-only" role="rowgroup">
-                <tr role="row">
-                  <th scope="col" role="columnheader">
-                    Regu
-                  </th>
-                  <th scope="col" role="columnheader">
-                    Tanggal
-                  </th>
-                  <th scope="col" role="columnheader">
-                    Pukul
-                  </th>
-                  <th scope="col" role="columnheader">
-                    Bukti latihan
-                  </th>
-                  <th scope="col" role="columnheader">
-                    Konfirmasi
-                  </th>
-                </tr>
-              </thead>
-              <tbody role="rowgroup">
-                {todayLogs.map((log) => {
-                  const logTeam = data.teams.find((team) => team.id === log.teamId);
-                  return (
-                    <tr key={log.id} role="row">
-                      <td data-label="Regu" role="cell">
-                        <span className="table-primary">
-                          Regu {logTeam?.name ?? "Tidak diketahui"}
-                        </span>
-                      </td>
-                      <td data-label="Tanggal" role="cell">
-                        {formatTrainingDate(log.trainingDate)}
-                      </td>
-                      <td data-label="Pukul" role="cell">
-                        {formatTrainingTime(log.createdAt)} WIB
-                      </td>
-                      <td data-label="Bukti latihan" role="cell">
-                        {log.evidencePath && log.evidenceUrl ? (
-                          <a
-                            className="training-evidence-link"
-                            href={log.evidenceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <Image
-                              src={log.evidenceUrl}
-                              alt={`Foto bukti latihan Regu ${logTeam?.name ?? ""}`}
-                              width={640}
-                              height={480}
-                              unoptimized
-                            />
-                          </a>
-                        ) : log.evidenceUrl ? (
-                          <a className="text-link" href={log.evidenceUrl} target="_blank" rel="noopener noreferrer">
-                            Buka tautan <ExternalLink aria-hidden="true" />
-                          </a>
-                        ) : (
-                          <span className="field-hint">
-                            {log.evidenceDeletedAt
-                              ? "Foto sudah dihapus"
-                              : log.evidenceUrlError ?? "Foto belum dapat ditampilkan"}
-                          </span>
-                        )}
-                      </td>
-                      <td data-label="Konfirmasi" role="cell">
-                        {log.confirmedAt ? (
-                          <div className="training-confirmation-status">
-                            <span className="status-pill is-approved">
-                              <CheckCircle2 aria-hidden="true" />
-                              Terkonfirmasi
-                            </span>
-                            {log.evidencePath && !log.evidenceDeletedAt ? (
-                              <button
-                                className="button button-secondary button-small"
-                                type="button"
-                                disabled={confirmingId !== null}
-                                onClick={() => void retryEvidenceDeletion(log)}
-                              >
-                                {confirmingId === log.id ? "Menghapus…" : "Coba hapus foto"}
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <button
-                            className="button button-small"
-                            type="button"
-                            disabled={confirmingId !== null}
-                            onClick={() => void confirmLog(log)}
-                          >
-                            {confirmingId === log.id ? "Menyimpan…" : "Konfirmasi"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <Activity aria-hidden="true" />
-            <strong>Belum ada laporan hari ini</strong>
-            <p>Laporan baru akan muncul otomatis setelah pendamping mencatat latihan.</p>
-          </div>
-        )}
-      </section>
-
       <section className="panel panel-pad training-history">
         <SectionHeading
           title="Riwayat latihan"
@@ -3312,10 +3199,24 @@ function TrainingReports({ notify }: { notify: Notify }) {
                       </td>
                       <td data-label="Status" role="cell">
                         {log.confirmedAt ? (
-                          <span className="status-pill is-approved">
-                            <CheckCircle2 aria-hidden="true" />
-                            Terkonfirmasi
-                          </span>
+                          <div className="training-confirmation-status">
+                            <span className="status-pill is-approved">
+                              <CheckCircle2 aria-hidden="true" />
+                              Terkonfirmasi
+                            </span>
+                            {log.evidencePath && !log.evidenceDeletedAt ? (
+                              <button
+                                className="button button-secondary button-small"
+                                type="button"
+                                disabled={confirmingId !== null}
+                                onClick={() => void retryEvidenceDeletion(log)}
+                              >
+                                {confirmingId === log.id
+                                  ? "Menghapus…"
+                                  : "Coba hapus foto"}
+                              </button>
+                            ) : null}
+                          </div>
                         ) : (
                           <div className="training-confirmation-status">
                             <span className="status-pill is-pending">
@@ -3346,6 +3247,50 @@ function TrainingReports({ notify }: { notify: Notify }) {
             <Activity aria-hidden="true" />
             <strong>Belum ada laporan pada tanggal ini</strong>
             <p>Tidak ada catatan latihan pendamping untuk tanggal yang dipilih.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="panel panel-pad training-team-summary">
+        <SectionHeading
+          title="Frekuensi latihan per regu"
+          detail="Jumlah seluruh laporan latihan yang tersimpan, termasuk yang menunggu konfirmasi."
+          action={
+            <span className="role-chip">
+              {data.trainingLogs.length} latihan tercatat
+            </span>
+          }
+        />
+        {teamTrainingCounts.length ? (
+          <div className="table-scroll">
+            <table
+              className="data-table training-team-summary-table"
+              aria-label="Jumlah latihan tercatat untuk setiap regu"
+            >
+              <thead>
+                <tr>
+                  <th scope="col">Regu</th>
+                  <th className="numeric" scope="col">
+                    Jumlah latihan
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamTrainingCounts.map(({ team, count }) => (
+                  <tr key={team.id}>
+                    <td>
+                      <span className="table-primary">Regu {team.name}</span>
+                    </td>
+                    <td className="numeric">{count} kali</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>Data regu belum tersedia</strong>
+            <p>Jumlah latihan akan muncul setelah data regu dimuat.</p>
           </div>
         )}
       </section>
