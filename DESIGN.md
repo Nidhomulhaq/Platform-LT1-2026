@@ -36,8 +36,12 @@ quiet shape language.
 ## Color, type, and interaction
 
 Use the shared CSS tokens in `app/globals.css` for text, surfaces, borders,
-focus rings, and semantic status colors. Do not place muted text on low-contrast
-surfaces or rely on color alone to communicate status.
+focus rings, and semantic status colors. Tailwind utilities are available for
+new UI, with `brand`, `brand-strong`, `surface`, `ground`, `ink`, and `muted`
+color names plus the existing font and radius tokens. The Tailwind preflight is
+intentionally omitted to preserve the established global styles. Do not place
+muted text on low-contrast surfaces or rely on color alone to communicate
+status.
 
 Keep interaction feedback restrained and fast: the current 140 ms and 200 ms
 motion tokens are appropriate for small state changes, not for delaying task
