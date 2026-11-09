@@ -184,7 +184,7 @@ textarea:focus-visible {
 
 .nav-link {
   display: flex;
-  min-height: 42px;
+  min-height: 44px;
   align-items: center;
   gap: 11px;
   padding: 0 11px;
@@ -1621,7 +1621,7 @@ textarea:focus-visible {
 }
 
 .training-entry-form {
-  align-items: end;
+  align-items: flex-end;
 }
 
 .training-entry-form > label:first-child {
@@ -1765,7 +1765,7 @@ textarea:focus-visible {
 
 .training-export-controls {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   flex-wrap: wrap;
   gap: 14px;
 }
@@ -2627,7 +2627,7 @@ textarea:focus-visible {
 .criteria-editor-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  align-items: flex-end;
   gap: 12px;
 }
 
@@ -3523,8 +3523,26 @@ textarea:focus-visible {
   }
 
   .topbar-actions > .icon-button {
-    width: 32px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .button,
+  .button-small,
+  .button-quiet,
+  .icon-button,
+  .account-trigger {
+    min-height: 44px;
+  }
+
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .field,
+  .filter-select {
+    min-height: 44px;
   }
 
   .page-heading {
@@ -3885,8 +3903,65 @@ textarea:focus-visible {
   }
 
   .table-actions .button {
-    min-height: 32px;
+    min-height: 44px;
     padding: 0 8px;
+  }
+
+  .training-history-controls .field {
+    min-height: 44px;
+  }
+
+  .training-report-table,
+  .training-history-table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .training-report-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .training-report-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+  }
+
+  .training-report-table tbody td {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    height: auto;
+    padding: 6px 0;
+    border-top: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .training-report-table tbody td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .training-report-table tbody td:first-child,
+  .training-report-table tbody td:nth-child(4),
+  .training-report-table tbody td:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .training-confirmation-status {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .certificate-copy p {

@@ -8,7 +8,6 @@ import {
   ArrowRight,
   Activity,
   Award,
-  Bell,
   BookOpen,
   CalendarCheck,
   CalendarDays,
@@ -796,9 +795,6 @@ function WorkspaceFrame({
                 ))}
               </select>
             )}
-            <button className="icon-button" aria-label="Notifikasi kegiatan">
-              <Bell aria-hidden="true" />
-            </button>
           </div>
         </div>
         <div className="content">{children}</div>
@@ -3071,25 +3067,47 @@ function TrainingReports({ notify }: { notify: Notify }) {
         />
         {todayLogs.length ? (
           <div className="table-scroll">
-            <table className="data-table training-report-table">
-              <thead>
-                <tr>
-                  <th>Regu</th>
-                  <th>Tanggal</th>
-                  <th>Pukul</th>
-                  <th>Bukti latihan</th>
-                  <th>Konfirmasi</th>
+            <table
+              className="data-table training-report-table"
+              role="table"
+              aria-label="Laporan latihan hari ini"
+            >
+              <thead className="sr-only" role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader">
+                    Regu
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Tanggal
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Pukul
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Bukti latihan
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Konfirmasi
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {todayLogs.map((log) => {
                   const logTeam = data.teams.find((team) => team.id === log.teamId);
                   return (
-                    <tr key={log.id}>
-                      <td><span className="table-primary">Regu {logTeam?.name ?? "Tidak diketahui"}</span></td>
-                      <td>{formatTrainingDate(log.trainingDate)}</td>
-                      <td>{formatTrainingTime(log.createdAt)} WIB</td>
-                      <td>
+                    <tr key={log.id} role="row">
+                      <td data-label="Regu" role="cell">
+                        <span className="table-primary">
+                          Regu {logTeam?.name ?? "Tidak diketahui"}
+                        </span>
+                      </td>
+                      <td data-label="Tanggal" role="cell">
+                        {formatTrainingDate(log.trainingDate)}
+                      </td>
+                      <td data-label="Pukul" role="cell">
+                        {formatTrainingTime(log.createdAt)} WIB
+                      </td>
+                      <td data-label="Bukti latihan" role="cell">
                         {log.evidencePath && log.evidenceUrl ? (
                           <a
                             className="training-evidence-link"
@@ -3117,7 +3135,7 @@ function TrainingReports({ notify }: { notify: Notify }) {
                           </span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Konfirmasi" role="cell">
                         {log.confirmedAt ? (
                           <div className="training-confirmation-status">
                             <span className="status-pill is-approved">
@@ -3216,32 +3234,50 @@ function TrainingReports({ notify }: { notify: Notify }) {
         </div>
         {historyLogs.length ? (
           <div className="table-scroll">
-            <table className="data-table training-report-table training-history-table">
-              <thead>
-                <tr>
-                  <th>Regu</th>
-                  <th>Pendamping</th>
-                  <th>Pukul</th>
-                  <th>Bukti latihan</th>
-                  <th>Status</th>
+            <table
+              className="data-table training-report-table training-history-table"
+              role="table"
+              aria-label="Riwayat latihan pada tanggal yang dipilih"
+            >
+              <thead className="sr-only" role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader">
+                    Regu
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Pendamping
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Pukul
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Bukti latihan
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Status
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {historyLogs.map((log) => {
                   const logTeam = data.teams.find((team) => team.id === log.teamId);
                   const companion = data.companions.find(
                     (person) => person.id === log.createdBy,
                   );
                   return (
-                    <tr key={log.id}>
-                      <td>
+                    <tr key={log.id} role="row">
+                      <td data-label="Regu" role="cell">
                         <span className="table-primary">
                           Regu {logTeam?.name ?? "Tidak diketahui"}
                         </span>
                       </td>
-                      <td>{companion?.name ?? "Tidak diketahui"}</td>
-                      <td>{formatTrainingTime(log.createdAt)} WIB</td>
-                      <td>
+                      <td data-label="Pendamping" role="cell">
+                        {companion?.name ?? "Tidak diketahui"}
+                      </td>
+                      <td data-label="Pukul" role="cell">
+                        {formatTrainingTime(log.createdAt)} WIB
+                      </td>
+                      <td data-label="Bukti latihan" role="cell">
                         {log.evidencePath && log.evidenceUrl ? (
                           <a
                             className="training-evidence-link"
@@ -3274,7 +3310,7 @@ function TrainingReports({ notify }: { notify: Notify }) {
                           </span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Status" role="cell">
                         {log.confirmedAt ? (
                           <span className="status-pill is-approved">
                             <CheckCircle2 aria-hidden="true" />
