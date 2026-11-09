@@ -40,6 +40,31 @@ export interface Competition {
   taskType: TaskType;
   criteria: ScoringCriterion[];
   isActive: boolean;
+  currentQuestionSetId: string | null;
+}
+
+export interface CbtQuestion {
+  id: string;
+  competitionId: string;
+  questionSetId: string;
+  position: number;
+  prompt: string;
+  options: [string, string, string, string];
+  correctOption: number;
+}
+
+export interface CbtQuestionDraft {
+  prompt: string;
+  options: [string, string, string, string];
+  correctOption: number;
+}
+
+export interface CbtAttemptQuestion {
+  attemptId: string;
+  questionId: string;
+  position: number;
+  prompt: string;
+  options: [string, string, string, string];
 }
 
 export interface School {
@@ -154,6 +179,7 @@ export interface WorkspaceData {
   eventSchedules: EventScheduleItem[];
   trainingLogs: TrainingLog[];
   competitions: Competition[];
+  cbtQuestions: CbtQuestion[];
   scores: ScoreRecord[];
   submissions: Record<string, SubmissionRecord>;
   attendance: Record<string, boolean>;
@@ -260,6 +286,7 @@ export const COMPETITIONS: Competition[] = [
     taskType: "live",
     criteria: [],
     isActive: true,
+    currentQuestionSetId: null,
   },
   {
     id: "sandi-morse",
@@ -268,6 +295,7 @@ export const COMPETITIONS: Competition[] = [
     taskType: "cbt",
     criteria: [],
     isActive: true,
+    currentQuestionSetId: null,
   },
   {
     id: "p3k",
@@ -276,6 +304,7 @@ export const COMPETITIONS: Competition[] = [
     taskType: "upload",
     criteria: [],
     isActive: true,
+    currentQuestionSetId: null,
   },
   {
     id: "sandi-pramuka",
@@ -284,6 +313,7 @@ export const COMPETITIONS: Competition[] = [
     taskType: "upload",
     criteria: [],
     isActive: true,
+    currentQuestionSetId: null,
   },
   {
     id: "islamiyah",
@@ -292,6 +322,7 @@ export const COMPETITIONS: Competition[] = [
     taskType: "cbt",
     criteria: [],
     isActive: true,
+    currentQuestionSetId: null,
   },
   {
     id: "yel-yel",
@@ -300,6 +331,7 @@ export const COMPETITIONS: Competition[] = [
     taskType: "live",
     criteria: [],
     isActive: true,
+    currentQuestionSetId: null,
   },
 ];
 
@@ -530,6 +562,7 @@ export const INITIAL_WORKSPACE_DATA: WorkspaceData = {
   eventSchedules: [],
   trainingLogs: [],
   competitions: COMPETITIONS,
+  cbtQuestions: [],
   scores: scoreRecords,
   submissions: {
     "pionering": { submitted: true, url: "" },
@@ -565,6 +598,7 @@ const EMPTY_WORKSPACE_DATA: WorkspaceData = {
   eventSchedules: [],
   trainingLogs: [],
   competitions: [],
+  cbtQuestions: [],
   scores: [],
   submissions: {},
   attendance: {},
@@ -650,6 +684,81 @@ async function loadSupabaseWorkspace(
   for (const result of results) {
     if (result.error) throw result.error;
   }
+
+  const competitionRows = competitionsResult.data ?? [];
+  const currentQuestionSetIds = competitionRows
+    .map((competition) => competition.current_question_set_id)
+    .filter((id): id is string => Boolean(id));
+  const cbtQuestionRows =
+    profileResult.data?.role === "operator" && currentQuestionSetIds.length
+      ? await supabase
+          .from("cbt_questions")
+          .select("*")
+          .in("question_set_id", currentQuestionSetIds)
+          .order("position")
+      : { data: [], error: null };
+  if (cbtQuestionRows.error) throw cbtQuestionRows.error;
+
+  const questionRows = cbtQuestionRows.data ?? [];
+  const cbtAnswerKeyRows =
+    profileResult.data?.role === "operator" && questionRows.length
+      ? await supabase
+          .from("cbt_answer_keys")
+          .select("question_id, correct_option")
+          .in(
+            "question_id",
+            questionRows.map((question) => question.id),
+          )
+      : { data: [], error: null };
+  if (cbtAnswerKeyRows.error) throw cbtAnswerKeyRows.error;
+
+  const competitionByQuestionSet = new Map(
+    competitionRows
+      .filter(
+        (competition) => competition.current_question_set_id !== null,
+      )
+      .map((competition) => [
+        competition.current_question_set_id,
+        competition.id,
+      ]),
+  );
+  const answerKeyByQuestion = new Map(
+    (cbtAnswerKeyRows.data ?? []).map((answerKey) => [
+      answerKey.question_id,
+      answerKey.correct_option,
+    ]),
+  );
+  const cbtQuestions: CbtQuestion[] = questionRows.map((question) => {
+    const competitionId = competitionByQuestionSet.get(
+      question.question_set_id,
+    );
+    const correctOption = answerKeyByQuestion.get(question.id);
+    if (
+      !competitionId ||
+      question.options.length !== 4 ||
+      question.options.some((option) => typeof option !== "string") ||
+      correctOption === undefined ||
+      correctOption < 1 ||
+      correctOption > 4
+    ) {
+      throw new Error("Bank soal CBT dari Supabase tidak valid.");
+    }
+
+    return {
+      id: question.id,
+      competitionId,
+      questionSetId: question.question_set_id,
+      position: question.position,
+      prompt: question.prompt,
+      options: [
+        question.options[0],
+        question.options[1],
+        question.options[2],
+        question.options[3],
+      ],
+      correctOption: correctOption - 1,
+    };
+  });
 
   const canViewEventSchedule =
     profileResult.data !== null &&
@@ -770,14 +879,16 @@ async function loadSupabaseWorkspace(
         endTime: schedule.end_time.slice(0, 5),
       })),
       trainingLogs,
-      competitions: (competitionsResult.data ?? []).map((competition) => ({
+      competitions: competitionRows.map((competition) => ({
         id: competition.id,
         title: competition.title,
         description: competition.description,
         taskType: competition.task_type,
         criteria: parseScoringCriteria(competition.criteria),
         isActive: competition.is_active,
+        currentQuestionSetId: competition.current_question_set_id,
       })),
+      cbtQuestions,
       scores: (scoresResult.data ?? []).map((score) => ({
         id: score.id,
         competitionId: score.competitionId,
@@ -822,7 +933,9 @@ interface WorkspaceContextValue {
   createTeam: (team: Omit<Team, "id">) => Promise<void>;
   updateTeam: (teamId: string, name: string) => Promise<void>;
   deleteTeam: (teamId: string) => Promise<void>;
-  createCompetition: (competition: Competition) => Promise<void>;
+  createCompetition: (
+    competition: Omit<Competition, "currentQuestionSetId">,
+  ) => Promise<void>;
   updateCompetition: (
     competitionId: string,
     changes: Pick<
@@ -863,6 +976,15 @@ interface WorkspaceContextValue {
   assignParticipants: (participantIds: string[], teamId: string) => Promise<void>;
   setTeamPinru: (userId: string, teamId: string) => Promise<void>;
   setCompetitionActive: (competitionId: string, active: boolean) => Promise<void>;
+  saveCompetitionQuestions: (
+    competitionId: string,
+    questions: CbtQuestionDraft[],
+  ) => Promise<void>;
+  startCbtAttempt: (competitionId: string) => Promise<CbtAttemptQuestion[]>;
+  submitCbtAnswers: (
+    attemptId: string,
+    answers: Record<string, number>,
+  ) => Promise<number>;
   submitWork: (competitionId: string, url: string) => Promise<void>;
   setAttendance: (
     teamId: string,
@@ -1221,7 +1343,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         setData((current) => ({
           ...current,
-          competitions: [...current.competitions, competition],
+          competitions: [
+            ...current.competitions,
+            { ...competition, currentQuestionSetId: null },
+          ],
         }));
       },
       updateCompetition: async (competitionId, changes) => {
@@ -1232,10 +1357,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               title: changes.title,
               description: changes.description,
               task_type: changes.taskType,
-              criteria: changes.criteria.map((criterion) => ({
-                id: criterion.id,
-                name: criterion.name,
-              })),
+              criteria:
+                changes.taskType === "cbt"
+                  ? []
+                  : changes.criteria.map((criterion) => ({
+                      id: criterion.id,
+                      name: criterion.name,
+                    })),
             })
             .eq("id", competitionId)
             .select("id")
@@ -1757,6 +1885,71 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               : competition,
           ),
         }));
+      },
+      saveCompetitionQuestions: async (competitionId, questions) => {
+        const { data: questionSetId, error } = await requireClient().rpc(
+          "save_competition_questions",
+          {
+            target_competition_id: competitionId,
+            question_set: questions.map((question) => ({
+              prompt: question.prompt.trim(),
+              options: question.options.map((option) => option.trim()),
+              correct_option: question.correctOption + 1,
+            })),
+          },
+        );
+        if (error) throw error;
+        if (!questionSetId) {
+          throw new Error("Versi soal CBT tidak berhasil disimpan.");
+        }
+        await refreshRemoteData(session?.user.id ?? null);
+      },
+      startCbtAttempt: async (competitionId) => {
+        const { data: attemptQuestions, error } = await requireClient().rpc(
+          "start_cbt_attempt",
+          { target_competition_id: competitionId },
+        );
+        if (error) throw error;
+        if (!attemptQuestions?.length) {
+          throw new Error("Soal CBT belum tersedia untuk dikerjakan.");
+        }
+        const attemptId = attemptQuestions[0].attempt_id;
+        return attemptQuestions.map((question) => {
+          if (
+            question.attempt_id !== attemptId ||
+            question.options.length !== 4 ||
+            question.options.some((option) => typeof option !== "string")
+          ) {
+            throw new Error("Data soal CBT dari Supabase tidak valid.");
+          }
+          return {
+            attemptId,
+            questionId: question.question_id,
+            position: question.position,
+            prompt: question.prompt,
+            options: [
+              question.options[0],
+              question.options[1],
+              question.options[2],
+              question.options[3],
+            ],
+          };
+        });
+      },
+      submitCbtAnswers: async (attemptId, answers) => {
+        const { data: score, error } = await requireClient().rpc(
+          "submit_cbt_answers",
+          {
+            target_attempt_id: attemptId,
+            selected_answers: answers,
+          },
+        );
+        if (error) throw error;
+        if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 100) {
+          throw new Error("Nilai CBT dari Supabase tidak valid.");
+        }
+        await refreshRemoteData(session?.user.id ?? null);
+        return score;
       },
       submitWork: async (competitionId, url) => {
         let submissionKey = competitionId;

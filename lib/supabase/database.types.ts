@@ -32,8 +32,37 @@ export type Database = {
         max_score: number;
         criteria: Json;
         is_active: boolean;
+        current_question_set_id: string | null;
         created_at: string;
         updated_at: string;
+      }>;
+      cbt_answer_keys: Table<{
+        question_id: string;
+        correct_option: number;
+        created_at: string;
+      }>;
+      cbt_attempts: Table<{
+        id: string;
+        competition_id: string;
+        team_id: string;
+        question_set_id: string;
+        started_by: string | null;
+        started_at: string;
+      }>;
+      cbt_question_sets: Table<{
+        id: string;
+        competition_id: string;
+        version: number;
+        created_by: string | null;
+        created_at: string;
+      }>;
+      cbt_questions: Table<{
+        id: string;
+        question_set_id: string;
+        position: number;
+        prompt: string;
+        options: string[];
+        created_at: string;
       }>;
       event_settings: Table<{
         id: boolean;
@@ -106,6 +135,7 @@ export type Database = {
         id: string;
         competition_id: string;
         team_id: string;
+        cbt_attempt_id: string | null;
         submission_url: string;
         answers: Json;
         submitted_at: string;
@@ -174,6 +204,24 @@ export type Database = {
       set_competition_active: {
         Args: { target_competition_id: string; should_be_active: boolean };
         Returns: undefined;
+      };
+      save_competition_questions: {
+        Args: { target_competition_id: string; question_set: Json };
+        Returns: string;
+      };
+      start_cbt_attempt: {
+        Args: { target_competition_id: string };
+        Returns: Array<{
+          attempt_id: string;
+          question_id: string;
+          position: number;
+          prompt: string;
+          options: string[];
+        }>;
+      };
+      submit_cbt_answers: {
+        Args: { target_attempt_id: string; selected_answers: Json };
+        Returns: number;
       };
       set_team_pinru: {
         Args: { target_user_id: string; target_team_id: string };

@@ -53,6 +53,8 @@ import {
   CURRENT_TEAM_ID,
   CURRENT_USER_ID,
   type Competition,
+  type CbtAttemptQuestion,
+  type CbtQuestionDraft,
   type Participant,
   type Role,
   type ScoreRecord,
@@ -81,6 +83,7 @@ type View =
   | "schools"
   | "teams"
   | "competitions"
+  | "cbtQuestions"
   | "judgeAssignments"
   | "panitiaAssignments"
   | "publication"
@@ -113,6 +116,7 @@ const viewTitles: Record<View, string> = {
   schools: "Data pangkalan",
   teams: "Manajemen regu",
   competitions: "Mata lomba",
+  cbtQuestions: "Bank soal CBT",
   judgeAssignments: "Penugasan juri",
   panitiaAssignments: "Penugasan panitia",
   publication: "Papan skor & sertifikat",
@@ -160,6 +164,7 @@ function IconForView({ view }: { view: View }) {
     case "profile":
       return <UserRound {...props} />;
     case "submit":
+    case "cbtQuestions":
       return <BookOpen {...props} />;
     case "operator":
       return <ClipboardList {...props} />;
@@ -425,6 +430,11 @@ function workspaceNavigation(
       { view: "schools", label: "Pangkalan", href: "/operator/schools" },
       { view: "competitions", label: "Mata lomba", href: "/operator/competitions" },
       {
+        view: "cbtQuestions",
+        label: "Soal CBT",
+        href: "/operator/cbt-questions",
+      },
+      {
         view: "judgeAssignments",
         label: "Penugasan juri",
         href: "/operator/judge-assignments",
@@ -488,6 +498,7 @@ const workspaceMenuDescriptions: Partial<Record<View, string>> = {
   teams: "Atur regu, peserta, dan pembagian anggota.",
   schools: "Kelola pangkalan yang mengikuti kegiatan.",
   competitions: "Atur mata lomba dan kriteria penilaian.",
+  cbtQuestions: "Susun soal pilihan ganda dan kunci jawaban CBT.",
   judgeAssignments: "Tentukan juri untuk setiap mata lomba.",
   panitiaAssignments: "Atur penugasan panitia di setiap pos.",
   publication: "Kelola publikasi papan skor dan sertifikat.",
@@ -564,6 +575,7 @@ function WorkspaceFrame({
     view === "schools" ||
     view === "teams" ||
     view === "competitions" ||
+    view === "cbtQuestions" ||
     view === "judgeAssignments" ||
     view === "panitiaAssignments" ||
     view === "publication" ||
@@ -1098,7 +1110,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
           <section className="panel panel-pad">
             <SectionHeading
               title="Lencana regu"
-              detail="Lencana diberikan untuk akumulasi minimal 80 poin."
+              detail="Nilai minimal 80, termasuk 80% untuk CBT."
               action={
                 <span className="role-chip">
                   {badgeCount} dari {data.competitions.length} diraih
@@ -1109,6 +1121,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
               {data.competitions.map((competition, index) => {
                 const Icon = badgeIcons[index % badgeIcons.length];
                 const score = getScore(data.scores, currentTeamId, competition.id);
+                const scoreUnit = competition.taskType === "cbt" ? "%" : "poin";
                 const earned =
                   score?.status === "approved" &&
                   score.score !== null &&
@@ -1119,7 +1132,7 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
                     key={competition.id}
                     title={
                       earned
-                        ? `${competition.title}: ${score.score ?? 0} poin`
+                        ? `${competition.title}: ${score.score ?? 0} ${scoreUnit}`
                         : `${competition.title}: belum diraih`
                     }
                   >
@@ -1128,7 +1141,9 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
                     </span>
                     <strong>{competition.title}</strong>
                     <span>
-                      {earned ? `${score.score ?? 0} poin` : "Belum diraih"}
+                      {earned
+                        ? `${score.score ?? 0} ${scoreUnit}`
+                        : "Belum diraih"}
                     </span>
                   </div>
                 );
@@ -1171,7 +1186,11 @@ function ParticipantDashboard({ notify }: { notify: Notify }) {
                     <StatusPill status={status} />
                     <span className="score-value">
                       {score && score.status === "approved" ? score.score : "—"}
-                      {score && score.status === "approved" ? <span> poin</span> : null}
+                      {score && score.status === "approved" ? (
+                        <span>
+                          {competition.taskType === "cbt" ? "%" : " poin"}
+                        </span>
+                      ) : null}
                     </span>
                     <Link
                       className="row-action-link"
@@ -1505,7 +1524,13 @@ function ParticipantScoreRecap() {
               )}
               <strong className="participant-score-value">
                 {score?.status === "approved" ? score.score ?? "—" : "—"}
-                <span>{score?.status === "approved" ? " poin" : ""}</span>
+                <span>
+                  {score?.status === "approved"
+                    ? competition.taskType === "cbt"
+                      ? "%"
+                      : " poin"
+                    : ""}
+                </span>
               </strong>
             </div>
           ))}
@@ -2247,8 +2272,11 @@ async function downloadCertificate(
     const scoreRows = competitions
       .map((competition, index) => {
         const score = teamScores[index]?.score ?? 0;
+        const scoreLabel = `${score}${
+          competition.taskType === "cbt" ? "%" : ""
+        }`;
         const y = 835 + index * 75;
-        return `<text x="140" y="${y}" class="row">${escapeXml(competition.title)}</text><text x="940" y="${y}" class="row number">${score}</text><line x1="140" y1="${y + 22}" x2="940" y2="${y + 22}" class="rule"/>`;
+        return `<text x="140" y="${y}" class="row">${escapeXml(competition.title)}</text><text x="940" y="${y}" class="row number">${scoreLabel}</text><line x1="140" y1="${y + 22}" x2="940" y2="${y + 22}" class="rule"/>`;
       })
       .join("");
     const qrMark = (x: number) =>
@@ -4675,12 +4703,12 @@ function OperatorScores({ notify }: { notify: Notify }) {
     <>
       <PageHeading
         title="Peninjauan nilai"
-        description="Pastikan nilai dan catatan juri sesuai sebelum hasil diterbitkan."
+        description="Tinjau nilai juri dan hasil CBT otomatis sebelum hasil diterbitkan."
       />
       <section className="panel panel-pad">
         <SectionHeading
           title="Antrean penilaian"
-          detail={`${visibleScores.length} nilai juri ditampilkan. Akumulasi lomba menjumlahkan nilai juri yang sudah disetujui.`}
+          detail={`${visibleScores.length} hasil ditampilkan. Nilai CBT dihitung otomatis, sedangkan nilai lomba lain mengikuti penilaian juri.`}
         />
         <div className="filter-row">
           <div className="search-control">
@@ -4721,8 +4749,8 @@ function OperatorScores({ notify }: { notify: Notify }) {
                 <tr>
                   <th>Regu</th>
                   <th>Mata lomba</th>
-                  <th>Juri</th>
-                  <th className="numeric">Akumulasi juri</th>
+                  <th>Penilai</th>
+                  <th className="numeric">Nilai</th>
                   <th className="numeric">Akumulasi lomba</th>
                   <th>Catatan juri</th>
                   <th>Status</th>
@@ -4752,9 +4780,16 @@ function OperatorScores({ notify }: { notify: Notify }) {
                         </span>
                       </td>
                       <td>{competition?.title}</td>
-                      <td>{score.judgeName || "Juri"}</td>
+                      <td>
+                        {competition?.taskType === "cbt"
+                          ? "CBT otomatis"
+                          : score.judgeName || "Juri"}
+                      </td>
                       <td className="numeric">
-                        <strong>{score.score ?? "—"}</strong>
+                        <strong>
+                          {score.score ?? "—"}
+                          {competition?.taskType === "cbt" ? "%" : ""}
+                        </strong>
                         {competition?.criteria.length ? (
                           <span className="table-secondary score-breakdown">
                             {competition.criteria
@@ -4773,9 +4808,14 @@ function OperatorScores({ notify }: { notify: Notify }) {
                       <td className="numeric">
                         {approvedScores.length ? (
                           <>
-                            <strong>{approvedScoreTotal}</strong>
+                            <strong>
+                              {approvedScoreTotal}
+                              {competition?.taskType === "cbt" ? "%" : ""}
+                            </strong>
                             <span className="table-secondary">
-                              {approvedScores.length} juri disetujui
+                              {competition?.taskType === "cbt"
+                                ? "dihitung otomatis"
+                                : `${approvedScores.length} juri disetujui`}
                             </span>
                           </>
                         ) : (
@@ -5096,7 +5136,7 @@ function SchoolManagement({ notify }: { notify: Notify }) {
 
 function JuryScoring({ notify }: { notify: Notify }) {
   const { data, currentUserId, isConnected, updateScore } = useWorkspace();
-  const judgeCompetitions = isConnected
+  const assignedCompetitions = isConnected
     ? data.competitions.filter((competition) =>
         data.judgeAssignments.some(
           (assignment) =>
@@ -5105,6 +5145,12 @@ function JuryScoring({ notify }: { notify: Notify }) {
         ),
       )
     : data.competitions;
+  const judgeCompetitions = assignedCompetitions.filter(
+    (competition) => competition.taskType !== "cbt",
+  );
+  const hasOnlyCbtAssignments =
+    judgeCompetitions.length === 0 &&
+    assignedCompetitions.some((competition) => competition.taskType === "cbt");
   const [competitionId, setCompetitionId] = React.useState(
     judgeCompetitions[0]?.id ?? "",
   );
@@ -5255,8 +5301,16 @@ function JuryScoring({ notify }: { notify: Notify }) {
         />
         <div className="empty-state">
           <ClipboardCheck aria-hidden="true" />
-          <strong>Belum ada mata lomba yang ditugaskan</strong>
-          <p>Minta operator menetapkan mata lomba untuk akun juri ini.</p>
+          <strong>
+            {hasOnlyCbtAssignments
+              ? "Penilaian CBT dihitung otomatis"
+              : "Belum ada mata lomba yang ditugaskan"}
+          </strong>
+          <p>
+            {hasOnlyCbtAssignments
+              ? "Mata lomba CBT tidak memerlukan input nilai dari juri."
+              : "Minta operator menetapkan mata lomba untuk akun juri ini."}
+          </p>
         </div>
       </>
     );
@@ -5498,6 +5552,7 @@ function CompetitionWorkspace({
     createCompetition,
     updateCompetition,
     deleteCompetition,
+    setCompetitionActive,
     assignJudge,
     removeJudgeAssignment,
     assignPanitia,
@@ -5526,6 +5581,10 @@ function CompetitionWorkspace({
   const [assignmentBusy, setAssignmentBusy] = React.useState(false);
   const [savingCompetition, setSavingCompetition] = React.useState(false);
   const [deletingCompetition, setDeletingCompetition] = React.useState("");
+  const [updatingAvailability, setUpdatingAvailability] = React.useState("");
+  const judgeableCompetitions = data.competitions.filter(
+    (competition) => competition.taskType !== "cbt",
+  );
 
   const updateTitle = (value: string) => {
     setTitle(value);
@@ -5551,22 +5610,30 @@ function CompetitionWorkspace({
       <section className="panel panel-pad">
         <SectionHeading
           title="Tambah mata lomba"
-          detail="Tentukan kriteria yang akan dinilai juri untuk mata lomba ini."
-        />
+            detail={
+              taskType === "cbt"
+                ? "Nilai CBT dihitung otomatis dari jawaban peserta."
+                : "Tentukan kriteria yang akan dinilai juri untuk mata lomba ini."
+            }
+          />
         <form
           className="form-stack"
           onSubmit={(event) => {
             event.preventDefault();
-            const names = criteria.map((name) => name.trim());
-            if (names.some((name) => !name)) {
+            const names =
+              taskType === "cbt" ? [] : criteria.map((name) => name.trim());
+            if (taskType !== "cbt" && names.some((name) => !name)) {
               notify("Lengkapi semua kriteria penilaian.", true);
               return;
             }
-            if (names.some((name) => name.length > 120)) {
+            if (taskType !== "cbt" && names.some((name) => name.length > 120)) {
               notify("Nama kriteria maksimal 120 karakter.", true);
               return;
             }
-            if (new Set(names.map((name) => name.toLowerCase())).size !== names.length) {
+            if (
+              taskType !== "cbt" &&
+              new Set(names.map((name) => name.toLowerCase())).size !== names.length
+            ) {
               notify("Nama kriteria penilaian tidak boleh duplikat.", true);
               return;
             }
@@ -5640,13 +5707,19 @@ function CompetitionWorkspace({
               />
             </label>
           </div>
-          <fieldset className="form-stack criteria-editor">
-            <legend className="field-label">Kriteria penilaian</legend>
-            <p className="field-hint">
-              Juri memberi nilai 0–100 untuk setiap kriteria. Nilai akhir juri
-              adalah jumlah semua kriteria.
+          {taskType === "cbt" ? (
+            <p className="notice" role="note">
+              Nilai CBT dihitung otomatis dari jawaban peserta. Buat bank soal
+              setelah mata lomba ditambahkan.
             </p>
-            {criteria.map((criterion, index) => (
+          ) : (
+            <fieldset className="form-stack criteria-editor">
+              <legend className="field-label">Kriteria penilaian</legend>
+              <p className="field-hint">
+                Juri memberi nilai 0–100 untuk setiap kriteria. Nilai akhir juri
+                adalah jumlah semua kriteria.
+              </p>
+              {criteria.map((criterion, index) => (
               <div className="criteria-editor-row" key={index}>
                 <label>
                   <span className="field-label">Kriteria {index + 1}</span>
@@ -5681,15 +5754,16 @@ function CompetitionWorkspace({
                 </button>
               </div>
             ))}
-            <button
-              className="button button-secondary button-small"
-              type="button"
-              onClick={() => setCriteria((current) => [...current, ""])}
-            >
-              <Plus aria-hidden="true" />
-              Tambah kriteria
-            </button>
-          </fieldset>
+              <button
+                className="button button-secondary button-small"
+                type="button"
+                onClick={() => setCriteria((current) => [...current, ""])}
+              >
+                <Plus aria-hidden="true" />
+                Tambah kriteria
+              </button>
+            </fieldset>
+          )}
           <button className="button button-small" type="submit" disabled={creating}>
             {creating ? "Menyimpan…" : "Tambah mata lomba"}
           </button>
@@ -5721,12 +5795,15 @@ function CompetitionWorkspace({
                             : "Unggah"}
                       </span>
                       <span>
-                        Kriteria:{" "}
-                        {competition.criteria.length
-                          ? competition.criteria
-                              .map((criterion) => criterion.name)
-                              .join(", ")
-                          : "Belum diatur"}
+                        {competition.taskType === "cbt"
+                          ? `${data.cbtQuestions.filter((question) => question.competitionId === competition.id).length} soal tersimpan`
+                          : `Kriteria: ${
+                              competition.criteria.length
+                                ? competition.criteria
+                                    .map((criterion) => criterion.name)
+                                    .join(", ")
+                                : "Belum diatur"
+                            }`}
                       </span>
                       {competition.description ? (
                         <span>{competition.description}</span>
@@ -5739,6 +5816,66 @@ function CompetitionWorkspace({
                     </span>
                   </div>
                   <div className="competition-item-actions">
+                    {competition.taskType === "cbt" ? (
+                      <Link
+                        className="button button-secondary button-small"
+                        href="/operator/cbt-questions"
+                      >
+                        <BookOpen aria-hidden="true" />
+                        Kelola soal
+                      </Link>
+                    ) : null}
+                    <button
+                      className={`button button-small${competition.isActive ? " button-secondary" : ""}`}
+                      type="button"
+                      aria-label={`${competition.isActive ? "Hentikan" : "Rilis"} mata lomba ${competition.title}`}
+                      disabled={
+                        Boolean(updatingAvailability) ||
+                        (competition.taskType === "cbt" &&
+                          !competition.currentQuestionSetId &&
+                          !competition.isActive)
+                      }
+                      title={
+                        competition.taskType === "cbt" &&
+                        !competition.currentQuestionSetId &&
+                        !competition.isActive
+                          ? "Tambahkan minimal satu soal sebelum merilis CBT."
+                          : undefined
+                      }
+                      onClick={() => {
+                        setUpdatingAvailability(competition.id);
+                        void setCompetitionActive(
+                          competition.id,
+                          !competition.isActive,
+                        )
+                          .then(() =>
+                            notify(
+                              competition.isActive
+                                ? `${competition.title} dihentikan.`
+                                : `${competition.title} dirilis untuk peserta.`,
+                            ),
+                          )
+                          .catch((error: unknown) => {
+                            console.error(
+                              "Gagal mengubah status mata lomba.",
+                              error,
+                            );
+                            notify(
+                              error instanceof Error
+                                ? error.message
+                                : "Status mata lomba gagal disimpan.",
+                              true,
+                            );
+                          })
+                          .finally(() => setUpdatingAvailability(""));
+                      }}
+                    >
+                      {updatingAvailability === competition.id
+                        ? "Menyimpan…"
+                        : competition.isActive
+                          ? "Hentikan"
+                          : "Rilis"}
+                    </button>
                     <button
                       className="button button-secondary button-small"
                       type="button"
@@ -5851,12 +5988,15 @@ function CompetitionWorkspace({
                           title: editingCompetition.title.trim(),
                           description: editingCompetition.description.trim(),
                           taskType: editingCompetition.taskType,
-                          criteria: criteriaLocked
-                            ? competition.criteria
-                            : names.map((name) => ({
-                                id: crypto.randomUUID(),
-                                name,
-                              })),
+                          criteria:
+                            editingCompetition.taskType === "cbt"
+                              ? []
+                              : criteriaLocked
+                                ? competition.criteria
+                                : names.map((name) => ({
+                                    id: crypto.randomUUID(),
+                                    name,
+                                  })),
                         })
                           .then(() => {
                             setEditingCompetition(null);
@@ -5926,23 +6066,31 @@ function CompetitionWorkspace({
                           />
                         </label>
                       </div>
-                      <fieldset
-                        className="form-stack criteria-editor"
-                        disabled={criteriaLocked}
-                      >
-                        <legend className="field-label">Kriteria penilaian</legend>
-                        {criteriaLocked ? (
-                          <p className="field-hint">
-                            Kriteria dikunci karena lomba ini sudah memiliki
-                            nilai. Nama, petunjuk, dan jenis tugas tetap dapat
-                            diedit.
-                          </p>
-                        ) : (
-                          <p className="field-hint">
-                            Juri memberi nilai 0–100 untuk setiap kriteria.
-                          </p>
-                        )}
-                        {editingCompetition.criteria.map((criterion, index) => (
+                      {editingCompetition.taskType === "cbt" ? (
+                        <p className="field-hint">
+                          Nilai CBT dihitung otomatis dari jawaban peserta.
+                          Atur pertanyaan pada menu Soal CBT.
+                        </p>
+                      ) : (
+                        <fieldset
+                          className="form-stack criteria-editor"
+                          disabled={criteriaLocked}
+                        >
+                          <legend className="field-label">
+                            Kriteria penilaian
+                          </legend>
+                          {criteriaLocked ? (
+                            <p className="field-hint">
+                              Kriteria dikunci karena lomba ini sudah memiliki
+                              nilai. Nama, petunjuk, dan jenis tugas tetap dapat
+                              diedit.
+                            </p>
+                          ) : (
+                            <p className="field-hint">
+                              Juri memberi nilai 0–100 untuk setiap kriteria.
+                            </p>
+                          )}
+                          {editingCompetition.criteria.map((criterion, index) => (
                           <div className="criteria-editor-row" key={index}>
                             <label>
                               <span className="field-label">
@@ -5993,24 +6141,25 @@ function CompetitionWorkspace({
                             </button>
                           </div>
                         ))}
-                        <button
-                          className="button button-secondary button-small"
-                          type="button"
-                          onClick={() =>
-                            setEditingCompetition((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    criteria: [...current.criteria, ""],
-                                  }
-                                : current,
-                            )
-                          }
-                        >
-                          <Plus aria-hidden="true" />
-                          Tambah kriteria
-                        </button>
-                      </fieldset>
+                          <button
+                            className="button button-secondary button-small"
+                            type="button"
+                            onClick={() =>
+                              setEditingCompetition((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      criteria: [...current.criteria, ""],
+                                    }
+                                  : current,
+                              )
+                            }
+                          >
+                            <Plus aria-hidden="true" />
+                            Tambah kriteria
+                          </button>
+                        </fieldset>
+                      )}
                       <div className="competition-editor-actions">
                         <button
                           className="button button-small"
@@ -6067,9 +6216,13 @@ function CompetitionWorkspace({
           <p className="inline-note">
             Tambahkan mata lomba sebelum menetapkan juri.
           </p>
+        ) : !judgeableCompetitions.length ? (
+          <p className="inline-note">
+            Mata lomba CBT dinilai otomatis dan tidak memerlukan penugasan juri.
+          </p>
         ) : (
           <div className="activity-list">
-            {data.competitions.map((competition) => {
+            {judgeableCompetitions.map((competition) => {
               const assigned = data.judgeAssignments.filter(
                 (assignment) => assignment.competitionId === competition.id,
               );
@@ -6326,6 +6479,288 @@ function JudgeAssignmentManagement({ notify }: { notify: Notify }) {
 
 function PanitiaAssignmentManagement({ notify }: { notify: Notify }) {
   return <CompetitionWorkspace notify={notify} mode="panitia" />;
+}
+
+function CbtQuestionManagement({ notify }: { notify: Notify }) {
+  const { data, saveCompetitionQuestions } = useWorkspace();
+  const competitions = data.competitions.filter(
+    (competition) => competition.taskType === "cbt",
+  );
+  const [competitionId, setCompetitionId] = React.useState(
+    competitions[0]?.id ?? "",
+  );
+  const [questions, setQuestions] = React.useState<CbtQuestionDraft[]>([]);
+  const [saving, setSaving] = React.useState(false);
+  const competition = competitions.find((item) => item.id === competitionId);
+  const savedQuestions = data.cbtQuestions.filter(
+    (question) => question.competitionId === competitionId,
+  );
+
+  React.useEffect(() => {
+    if (!competitions.some((item) => item.id === competitionId)) {
+      setCompetitionId(competitions[0]?.id ?? "");
+    }
+  }, [competitionId, competitions]);
+
+  React.useEffect(() => {
+    setQuestions(
+      savedQuestions.map((question) => ({
+        prompt: question.prompt,
+        options: [
+          question.options[0],
+          question.options[1],
+          question.options[2],
+          question.options[3],
+        ],
+        correctOption: question.correctOption,
+      })),
+    );
+  }, [competitionId, competition?.currentQuestionSetId]);
+
+  const updateQuestion = (
+    questionIndex: number,
+    update: (question: CbtQuestionDraft) => CbtQuestionDraft,
+  ) => {
+    setQuestions((current) =>
+      current.map((question, index) =>
+        index === questionIndex ? update(question) : question,
+      ),
+    );
+  };
+
+  const addQuestion = () => {
+    setQuestions((current) => [
+      ...current,
+      {
+        prompt: "",
+        options: ["", "", "", ""],
+        correctOption: 0,
+      },
+    ]);
+  };
+
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!competition) return;
+
+    const normalizedQuestions: CbtQuestionDraft[] = questions.map((question) => {
+      const options: CbtQuestionDraft["options"] = [
+        question.options[0].trim(),
+        question.options[1].trim(),
+        question.options[2].trim(),
+        question.options[3].trim(),
+      ];
+      return {
+        prompt: question.prompt.trim(),
+        options,
+        correctOption: question.correctOption,
+      };
+    });
+    if (
+      !normalizedQuestions.length ||
+      normalizedQuestions.some(
+        (question) =>
+          !question.prompt ||
+          question.prompt.length > 1000 ||
+          question.options.some((option) => !option || option.length > 500) ||
+          question.correctOption < 0 ||
+          question.correctOption > 3,
+      )
+    ) {
+      notify(
+        "Lengkapi setiap soal, empat opsi, dan satu jawaban benar.",
+        true,
+      );
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await saveCompetitionQuestions(competition.id, normalizedQuestions);
+      notify(
+        `Bank soal ${competition.title} berhasil disimpan sebagai versi baru.`,
+      );
+    } catch (error) {
+      console.error("Gagal menyimpan bank soal CBT.", error);
+      notify(
+        error instanceof Error ? error.message : "Bank soal gagal disimpan.",
+        true,
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <PageHeading
+        title="Bank soal CBT"
+        description="Buat soal pilihan ganda empat opsi untuk mata lomba berbasis komputer."
+        actions={
+          <Link className="button button-secondary" href="/operator/competitions">
+            Mata lomba
+          </Link>
+        }
+      />
+      {competitions.length ? (
+        <>
+          <section className="panel panel-pad">
+            <label>
+              <span className="field-label">Mata lomba CBT</span>
+              <select
+                className="field"
+                value={competitionId}
+                onChange={(event) => setCompetitionId(event.target.value)}
+              >
+                {competitions.map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="field-hint">
+              Nilai dihitung otomatis sebagai persentase jawaban benar dari
+              seluruh soal.
+            </p>
+            <div className="notice" role="note">
+              <CircleHelp aria-hidden="true" />
+              <p>
+                Soal dapat diedit kapan saja. Setiap penyimpanan membuat versi
+                baru, peserta yang sudah mulai tetap mengerjakan versi saat
+                mereka membuka soal, dan nilai yang sudah masuk tidak berubah.
+              </p>
+            </div>
+          </section>
+          <section className="panel panel-pad cbt-editor-panel">
+            <SectionHeading
+              title={competition?.title ?? "Soal CBT"}
+              detail={
+                savedQuestions.length
+                  ? `${savedQuestions.length} soal pada versi aktif`
+                  : "Belum ada bank soal untuk mata lomba ini."
+              }
+              action={
+                <button
+                  className="button button-secondary button-small"
+                  type="button"
+                  onClick={addQuestion}
+                >
+                  <Plus aria-hidden="true" />
+                  Tambah soal
+                </button>
+              }
+            />
+            {questions.length ? (
+              <form className="cbt-editor-form" onSubmit={save}>
+                {questions.map((question, questionIndex) => (
+                  <fieldset className="cbt-editor-question" key={questionIndex}>
+                    <legend>Soal {questionIndex + 1}</legend>
+                    <label>
+                      <span className="field-label">Pertanyaan</span>
+                      <textarea
+                        className="field text-area"
+                        maxLength={1000}
+                        required
+                        value={question.prompt}
+                        onChange={(event) =>
+                          updateQuestion(questionIndex, (current) => ({
+                            ...current,
+                            prompt: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <fieldset className="cbt-option-editor">
+                      <legend className="field-label">
+                        Empat opsi, pilih satu jawaban benar
+                      </legend>
+                      <div className="cbt-option-grid">
+                        {question.options.map((option, optionIndex) => (
+                          <div className="cbt-option-row" key={optionIndex}>
+                            <input
+                              type="radio"
+                              name={`cbt-answer-${competitionId}-${questionIndex}`}
+                              aria-label={`Tandai opsi ${String.fromCharCode(65 + optionIndex)} sebagai jawaban benar untuk soal ${questionIndex + 1}`}
+                              checked={question.correctOption === optionIndex}
+                              onChange={() =>
+                                updateQuestion(questionIndex, (current) => ({
+                                  ...current,
+                                  correctOption: optionIndex,
+                                }))
+                              }
+                            />
+                            <label className="cbt-option-field">
+                              <span>
+                                Opsi {String.fromCharCode(65 + optionIndex)}
+                              </span>
+                              <input
+                                className="field"
+                                maxLength={500}
+                                required
+                                value={option}
+                                onChange={(event) =>
+                                  updateQuestion(questionIndex, (current) => {
+                                    const options: CbtQuestionDraft["options"] =
+                                      [
+                                        current.options[0],
+                                        current.options[1],
+                                        current.options[2],
+                                        current.options[3],
+                                      ];
+                                    options[optionIndex] = event.target.value;
+                                    return { ...current, options };
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </fieldset>
+                    <button
+                      className="button button-danger button-small"
+                      type="button"
+                      disabled={questions.length === 1}
+                      onClick={() =>
+                        setQuestions((current) =>
+                          current.filter((_, index) => index !== questionIndex),
+                        )
+                      }
+                    >
+                      <Trash2 aria-hidden="true" />
+                      Hapus soal
+                    </button>
+                  </fieldset>
+                ))}
+                <button className="button" type="submit" disabled={saving}>
+                  {saving ? "Menyimpan…" : "Simpan bank soal"}
+                </button>
+              </form>
+            ) : (
+              <div className="empty-state cbt-empty-state">
+                <BookOpen aria-hidden="true" />
+                <strong>Bank soal masih kosong</strong>
+                <p>Tambahkan soal pertama untuk mulai menyusun CBT.</p>
+                <button className="button" type="button" onClick={addQuestion}>
+                  Tambah soal pertama
+                </button>
+              </div>
+            )}
+          </section>
+        </>
+      ) : (
+        <section className="panel panel-pad empty-state cbt-empty-state">
+          <BookOpen aria-hidden="true" />
+          <strong>Belum ada mata lomba CBT</strong>
+          <p>Buat mata lomba CBT sebelum menambahkan bank soal.</p>
+          <Link className="button" href="/operator/competitions">
+            Buat mata lomba
+          </Link>
+        </section>
+      )}
+    </>
+  );
 }
 
 function PublicationSettings({ notify }: { notify: Notify }) {
@@ -7253,6 +7688,8 @@ function EventCoordination({ notify }: { notify: Notify }) {
       const [competitionId, setCompetitionId] = React.useState(
         assignedCompetitions[0]?.id ?? "",
       );
+      const [updatingCompetition, setUpdatingCompetition] =
+        React.useState(false);
       React.useEffect(() => {
         if (!assignedCompetitions.some((item) => item.id === competitionId)) {
           setCompetitionId(assignedCompetitions[0]?.id ?? "");
@@ -7265,7 +7702,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
         (team) => data.attendance[`${team.id}:${competitionId}`],
       ).length;
       const updateCompetitionState = async () => {
-        if (!competition) return;
+        if (
+          !competition ||
+          (!competition.isActive &&
+            competition.taskType === "cbt" &&
+            !competition.currentQuestionSetId)
+        ) {
+          return;
+        }
+        setUpdatingCompetition(true);
         try {
           await setCompetitionActive(competition.id, !competition.isActive);
           notify(
@@ -7275,7 +7720,14 @@ function EventCoordination({ notify }: { notify: Notify }) {
           );
         } catch (error) {
           console.error("Gagal mengubah status mata lomba.", error);
-          notify("Status mata lomba gagal disimpan.", true);
+          notify(
+            error instanceof Error
+              ? error.message
+              : "Status mata lomba gagal disimpan.",
+            true,
+          );
+        } finally {
+          setUpdatingCompetition(false);
         }
       };
       const toggleAttendance = async (
@@ -7326,10 +7778,27 @@ function EventCoordination({ notify }: { notify: Notify }) {
               {competition ? (
                 <button
                   className={`button button-small${competition.isActive ? " button-secondary" : ""}`}
+                  type="button"
+                  disabled={
+                    updatingCompetition ||
+                    (!competition.isActive &&
+                      competition.taskType === "cbt" &&
+                      !competition.currentQuestionSetId)
+                  }
+                  title={
+                    competition.taskType === "cbt" &&
+                    !competition.currentQuestionSetId
+                      ? "Operator perlu menambahkan soal sebelum CBT dirilis."
+                      : undefined
+                  }
                   onClick={() => void updateCompetitionState()}
                 >
                   <Flag aria-hidden="true" />
-                  {competition.isActive ? "Tugas dirilis" : "Rilis tugas"}
+                  {updatingCompetition
+                    ? "Menyimpan…"
+                    : competition.isActive
+                      ? "Tugas dirilis"
+                      : "Rilis tugas"}
                 </button>
               ) : null}
             </div>
@@ -7342,6 +7811,12 @@ function EventCoordination({ notify }: { notify: Notify }) {
                 </span>
               }
             />
+            {competition?.taskType === "cbt" &&
+            !competition.currentQuestionSetId ? (
+              <p className="field-hint">
+                Operator perlu menambahkan soal sebelum CBT dapat dirilis.
+              </p>
+            ) : null}
             {!isConnected ? (
               <div className="notice" role="note">
                 <CircleHelp aria-hidden="true" />
@@ -7406,7 +7881,14 @@ function EventCoordination({ notify }: { notify: Notify }) {
       competitionId: string;
       notify: Notify;
     }) {
-      const { data, submitWork, currentUserId, isConnected } = useWorkspace();
+      const {
+        data,
+        submitWork,
+        startCbtAttempt,
+        submitCbtAnswers,
+        currentUserId,
+        isConnected,
+      } = useWorkspace();
       const router = useRouter();
       const currentParticipant = data.participants.find(
         (person) => person.id === currentUserId,
@@ -7418,10 +7900,71 @@ function EventCoordination({ notify }: { notify: Notify }) {
       const [url, setUrl] = React.useState(
         getSubmission(data, currentTeamId, competitionId)?.url ?? "",
       );
-      const [answers, setAnswers] = React.useState<Record<number, string>>({});
+      const [answers, setAnswers] = React.useState<Record<string, number>>({});
       const [fileName, setFileName] = React.useState("");
+      const [quizQuestions, setQuizQuestions] = React.useState<
+        CbtAttemptQuestion[]
+      >([]);
+      const [attemptId, setAttemptId] = React.useState("");
+      const [quizLoading, setQuizLoading] = React.useState(false);
+      const [quizError, setQuizError] = React.useState<string | null>(null);
+      const [submitting, setSubmitting] = React.useState(false);
       const submission = getSubmission(data, currentTeamId, competitionId);
       const existingScore = getScore(data.scores, currentTeamId, competitionId);
+
+      React.useEffect(() => {
+        if (
+          !competition ||
+          competition.taskType !== "cbt" ||
+          !competition.isActive ||
+          !canSubmit ||
+          !currentTeamId ||
+          !isConnected ||
+          submission?.submitted
+        ) {
+          setQuizQuestions([]);
+          setAttemptId("");
+          setQuizLoading(false);
+          setQuizError(null);
+          return;
+        }
+
+        let isCurrent = true;
+        setQuizLoading(true);
+        setQuizError(null);
+        startCbtAttempt(competition.id)
+          .then((questions) => {
+            if (!isCurrent) return;
+            setQuizQuestions(questions);
+            setAttemptId(questions[0]?.attemptId ?? "");
+            setAnswers({});
+          })
+          .catch((error: unknown) => {
+            if (!isCurrent) return;
+            console.error("Gagal memuat soal CBT.", error);
+            setQuizError(
+              error instanceof Error
+                ? error.message
+                : "Soal CBT gagal dimuat.",
+            );
+          })
+          .finally(() => {
+            if (isCurrent) setQuizLoading(false);
+          });
+
+        return () => {
+          isCurrent = false;
+        };
+      }, [
+        canSubmit,
+        competition?.id,
+        competition?.isActive,
+        competition?.taskType,
+        currentTeamId,
+        isConnected,
+        startCbtAttempt,
+        submission?.submitted,
+      ]);
 
       if (!competition) {
         return (
@@ -7443,31 +7986,46 @@ function EventCoordination({ notify }: { notify: Notify }) {
           notify("Tugas ini belum dirilis panitia.", true);
           return;
         }
-        if (competition.taskType === "cbt" && Object.keys(answers).length < 3) {
-          notify("Jawab semua pertanyaan sebelum mengirim tugas.", true);
-          return;
-        }
         if (competition.taskType === "upload" && !url.trim() && !fileName) {
           notify("Tambahkan tautan berkas atau pilih nama berkas.", true);
           return;
         }
-        const savedValue =
-          competition.taskType === "cbt"
-            ? `cbt:${Object.keys(answers).length}-jawaban`
-            : url.trim() || `demo-file:${fileName}`;
         try {
-          await submitWork(competition.id, savedValue);
-          notify(
-            isConnected
-              ? "Tugas berhasil dikirim ke basis data kegiatan."
-              : "Tugas berhasil dikirim pada data demo.",
-          );
+          setSubmitting(true);
+          if (competition.taskType === "cbt") {
+            if (
+              !attemptId ||
+              quizQuestions.length === 0 ||
+              quizQuestions.some(
+                (question) => answers[question.questionId] === undefined,
+              )
+            ) {
+              notify("Jawab semua soal sebelum mengirim tugas.", true);
+              return;
+            }
+            const score = await submitCbtAnswers(attemptId, answers);
+            notify(
+              `Jawaban berhasil dikirim. Nilai otomatis: ${score.toLocaleString("id-ID", { maximumFractionDigits: 2 })}%.`,
+            );
+          } else {
+            await submitWork(
+              competition.id,
+              url.trim() || `demo-file:${fileName}`,
+            );
+            notify(
+              isConnected
+                ? "Tugas berhasil dikirim ke basis data kegiatan."
+                : "Tugas berhasil dikirim pada data demo.",
+            );
+          }
         } catch (error) {
           console.error("Gagal mengirim tugas peserta.", error);
           notify(
             error instanceof Error ? error.message : "Tugas gagal dikirim.",
             true,
           );
+        } finally {
+          setSubmitting(false);
         }
       };
 
@@ -7514,53 +8072,61 @@ function EventCoordination({ notify }: { notify: Notify }) {
                     nama regu. Anggota dapat melihat status pengumpulan.
                   </p>
                 </div>
+              ) : competition.taskType === "cbt" && submission?.submitted ? (
+                <div className="notice" role="status">
+                  <CheckCircle2 aria-hidden="true" />
+                  <p>
+                    Jawaban CBT regumu sudah dikirim dan nilainya telah
+                    dihitung otomatis.
+                  </p>
+                </div>
               ) : (
                 <form className="form-stack" onSubmit={submit}>
                   {competition.taskType === "cbt" ? (
                     <div className="form-stack">
-                      {[
-                        {
-                          prompt: "Simpul untuk menyambung dua tali sama besar adalah …",
-                          options: ["Simpul mati", "Simpul pangkal", "Simpul tiang"],
-                        },
-                        {
-                          prompt: "Semboyan Gerakan Pramuka adalah …",
-                          options: [
-                            "Satyaku Kudarmakan",
-                            "Ikhlas Bakti Bina Bangsa",
-                            "Siap Sedia",
-                          ],
-                        },
-                        {
-                          prompt: "Arah mata angin di antara utara dan timur adalah …",
-                          options: ["Barat laut", "Timur laut", "Tenggara"],
-                        },
-                      ].map((question, index) => (
-                        <fieldset className="quiz-question" key={question.prompt}>
+                      {quizLoading ? (
+                        <p role="status">Memuat soal CBT…</p>
+                      ) : quizError ? (
+                        <div className="notice auth-error" role="alert">
+                          <CircleHelp aria-hidden="true" />
+                          <p>{quizError}</p>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="field-hint">
+                            Pilih satu jawaban pada setiap soal. Nilai akhir
+                            dihitung sebagai persentase jawaban benar.
+                          </p>
+                          {quizQuestions.map((question) => (
+                        <fieldset className="quiz-question" key={question.questionId}>
                           <legend>
-                            <strong>{index + 1}.</strong> {question.prompt}
+                            <strong>{question.position}.</strong> {question.prompt}
                           </legend>
                           <div className="quiz-options">
-                            {question.options.map((option) => (
-                              <label className="quiz-option" key={option}>
+                            {question.options.map((option, optionIndex) => (
+                              <label className="quiz-option" key={optionIndex}>
                                 <input
                                   type="radio"
-                                  name={`question-${index}`}
-                                  value={option}
-                                  checked={answers[index] === option}
+                                  name={`question-${question.questionId}`}
+                                  value={optionIndex}
+                                  checked={answers[question.questionId] === optionIndex}
                                   onChange={() =>
                                     setAnswers((current) => ({
                                       ...current,
-                                      [index]: option,
+                                      [question.questionId]: optionIndex,
                                     }))
                                   }
                                 />
-                                {option}
+                                <span>
+                                  {String.fromCharCode(65 + optionIndex)}. {option}
+                                </span>
                               </label>
                             ))}
                           </div>
                         </fieldset>
-                      ))}
+                          ))}
+                        </>
+                      )}
                     </div>
                   ) : competition.taskType === "upload" ? (
                     <>
@@ -7640,9 +8206,19 @@ function EventCoordination({ notify }: { notify: Notify }) {
                       Konfirmasi kehadiran
                     </button>
                   ) : (
-                    <button className="button" type="submit">
+                    <button
+                      className="button"
+                      type="submit"
+                      disabled={
+                        submitting ||
+                        (competition.taskType === "cbt" &&
+                          (quizLoading ||
+                            Boolean(quizError) ||
+                            !quizQuestions.length))
+                      }
+                    >
                       <Send aria-hidden="true" />
-                      Kirim tugas
+                      {submitting ? "Mengirim…" : "Kirim tugas"}
                     </button>
                   )}
                 </form>
@@ -7672,11 +8248,17 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   </div>
                   <div className="activity-row">
                     <span className="activity-copy">
-                      <strong>Penilaian juri</strong>
+                      <strong>
+                        {competition.taskType === "cbt"
+                          ? "Nilai otomatis"
+                          : "Penilaian juri"}
+                      </strong>
                       <span>
                         {existingScore
                           ? existingScore.status === "approved"
-                            ? `${existingScore.score} poin disahkan`
+                          ? competition.taskType === "cbt"
+                            ? `${existingScore.score}%`
+                            : `${existingScore.score} poin disahkan`
                             : existingScore.status === "pending_review"
                               ? "Menunggu tinjauan operator"
                               : existingScore.status === "revision_needed"
@@ -7689,13 +8271,15 @@ function EventCoordination({ notify }: { notify: Notify }) {
                   </div>
                 </div>
               </section>
-              <div className="notice" role="note">
-                <CircleHelp aria-hidden="true" />
-                <p>
-                  Jawaban pada halaman ini adalah data pratinjau. Data tidak
-                  terkirim ke panitia atau Supabase.
-                </p>
-              </div>
+              {!isConnected ? (
+                <div className="notice" role="note">
+                  <CircleHelp aria-hidden="true" />
+                  <p>
+                    Jawaban pada halaman ini adalah data pratinjau. Data tidak
+                    terkirim ke panitia atau Supabase.
+                  </p>
+                </div>
+              ) : null}
               <button
                 className="button button-secondary"
                 onClick={() => router.push("/dashboard")}
@@ -8510,6 +9094,7 @@ function EventCoordination({ notify }: { notify: Notify }) {
         view === "schools" ||
         view === "teams" ||
         view === "competitions" ||
+        view === "cbtQuestions" ||
         view === "judgeAssignments" ||
         view === "panitiaAssignments" ||
         view === "publication" ||
@@ -8672,6 +9257,9 @@ function EventCoordination({ notify }: { notify: Notify }) {
           break;
         case "competitions":
           content = <CompetitionManagement notify={notify} />;
+          break;
+        case "cbtQuestions":
+          content = <CbtQuestionManagement notify={notify} />;
           break;
         case "judgeAssignments":
           content = <JudgeAssignmentManagement notify={notify} />;
