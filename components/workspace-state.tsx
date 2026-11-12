@@ -1597,6 +1597,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             })
             .select("*")
             .single();
+          if (error?.code === "23505") throw new Error(error.message);
           if (error) throw error;
 
           const nextLog: TrainingLog = {

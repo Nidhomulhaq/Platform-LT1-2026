@@ -154,6 +154,9 @@ function IconForView({ view }: { view: View }) {
   const props = { "aria-hidden": true as const };
   switch (view) {
     case "participant":
+    case "juriDashboard":
+    case "panitiaDashboard":
+    case "pendampingDashboard":
       return <Home {...props} />;
     case "leaderboard":
       return <Trophy {...props} />;
@@ -2474,6 +2477,7 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
     return () => window.clearInterval(intervalId);
   }, []);
   const today = jakartaDate(now);
+  const hasLogToday = teamLogs.some((log) => log.trainingDate === today);
   const weekStart = mondayOfWeek(today);
   const weekDates = React.useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDateDays(weekStart, index)),
@@ -2758,7 +2762,11 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
             <section className="panel panel-pad training-entry">
               <SectionHeading
                 title="Catat latihan"
-                detail="Tanggal mengikuti hari pengisian. Unggah satu foto bukti latihan."
+                detail={
+                  hasLogToday
+                    ? "Aktivitas hari ini sudah tercatat. Pencatatan dibuka kembali pukul 00.00 WIB."
+                    : "Tanggal mengikuti hari pengisian. Satu aktivitas dapat dicatat per hari."
+                }
               />
               <form className="form-row training-entry-form" onSubmit={(event) => void submitTrainingLog(event)}>
                 <label>
@@ -2777,13 +2785,18 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
                     ref={evidenceInputRef}
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
+                    disabled={hasLogToday}
                     onChange={(event) =>
                       setEvidenceFile(event.target.files?.[0] ?? null)
                     }
                     required
                   />
                 </label>
-                <button className="button" type="submit" disabled={saving || !isConnected}>
+                <button
+                  className="button"
+                  type="submit"
+                  disabled={saving || !isConnected || hasLogToday}
+                >
                   {saving ? "Menyimpan…" : "Simpan catatan"}
                 </button>
               </form>
