@@ -3044,11 +3044,18 @@ function TrainingReports({ notify }: { notify: Notify }) {
     for (const log of data.trainingLogs) {
       counts.set(log.teamId, (counts.get(log.teamId) ?? 0) + 1);
     }
-    return data.teams.map((team) => ({
-      team,
-      count: counts.get(team.id) ?? 0,
-    }));
+    return data.teams
+      .map((team) => ({
+        team,
+        count: counts.get(team.id) ?? 0,
+      }))
+      .sort(
+        (left, right) =>
+          right.count - left.count ||
+          left.team.name.localeCompare(right.team.name, "id"),
+      );
   }, [data.teams, data.trainingLogs]);
+  const maximumTeamTrainingCount = teamTrainingCounts[0]?.count ?? 0;
 
   const downloadReport = () => {
     const workbook = createTrainingReportWorkbook(exportLogs, data.teams, range.label);
@@ -3303,31 +3310,31 @@ function TrainingReports({ notify }: { notify: Notify }) {
           }
         />
         {teamTrainingCounts.length ? (
-          <div className="table-scroll">
-            <table
-              className="data-table training-team-summary-table"
-              aria-label="Jumlah latihan tercatat untuk setiap regu"
-            >
-              <thead>
-                <tr>
-                  <th scope="col">Regu</th>
-                  <th className="numeric" scope="col">
-                    Jumlah latihan
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamTrainingCounts.map(({ team, count }) => (
-                  <tr key={team.id}>
-                    <td>
-                      <span className="table-primary">Regu {team.name}</span>
-                    </td>
-                    <td className="numeric">{count} kali</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ol
+            className="training-frequency-list"
+            aria-label="Frekuensi latihan setiap regu, diurutkan dari terbanyak"
+          >
+            {teamTrainingCounts.map(({ team, count }) => (
+              <li className="training-frequency-row" key={team.id}>
+                <span className="training-frequency-team">Regu {team.name}</span>
+                <span className="training-frequency-chart">
+                  <span className="training-frequency-track" aria-hidden="true">
+                    <span
+                      className="training-frequency-bar"
+                      style={{
+                        width: `${maximumTeamTrainingCount
+                          ? (count / maximumTeamTrainingCount) * 100
+                          : 0}%`,
+                      }}
+                    />
+                  </span>
+                  <strong className="training-frequency-count">
+                    {count} kali
+                  </strong>
+                </span>
+              </li>
+            ))}
+          </ol>
         ) : (
           <div className="empty-state">
             <strong>Data regu belum tersedia</strong>

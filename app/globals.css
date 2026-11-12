@@ -1709,6 +1709,59 @@ textarea:focus-visible {
   min-width: 760px;
 }
 
+.training-frequency-list {
+  display: grid;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.training-frequency-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 2fr);
+  align-items: center;
+  gap: 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.training-frequency-team {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.training-frequency-chart {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.training-frequency-track {
+  display: block;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-active);
+}
+
+.training-frequency-bar {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width var(--motion-ui) var(--ease-ui);
+}
+
+.training-frequency-count {
+  min-width: 5ch;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .training-history-controls {
   display: flex;
   align-items: flex-end;
@@ -2049,6 +2102,15 @@ textarea:focus-visible {
   .training-entry-form > label:first-child,
   .training-entry-form > label:nth-child(2) {
     flex: auto;
+  }
+
+  .training-frequency-row {
+    grid-template-columns: minmax(88px, 0.8fr) minmax(0, 2fr);
+    gap: 12px;
+  }
+
+  .training-frequency-chart {
+    gap: 8px;
   }
 
   .training-log-actions {
