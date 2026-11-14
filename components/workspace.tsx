@@ -5636,9 +5636,6 @@ function CompetitionWorkspace({
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [criteria, setCriteria] = React.useState([""]);
-  const [selectedJudges, setSelectedJudges] = React.useState<
-    Record<string, string>
-  >({});
   const [selectedPanitia, setSelectedPanitia] = React.useState<
     Record<string, string>
   >({});
@@ -5659,6 +5656,34 @@ function CompetitionWorkspace({
   const judgeableCompetitions = data.competitions.filter(
     (competition) => competition.taskType !== "cbt",
   );
+
+  const toggleJudgeAssignment = async (
+    competitionId: string,
+    juriId: string,
+    assignmentId: string | undefined,
+    shouldAssign: boolean,
+  ) => {
+    setAssignmentBusy(true);
+    try {
+      if (shouldAssign) {
+        await assignJudge(juriId, competitionId);
+        notify("Juri berhasil ditugaskan.");
+      } else if (assignmentId) {
+        await removeJudgeAssignment(assignmentId);
+        notify("Penugasan juri berhasil dihapus.");
+      }
+    } catch (error) {
+      console.error("Gagal memperbarui penugasan juri.", error);
+      notify(
+        shouldAssign
+          ? "Juri gagal ditugaskan."
+          : "Penugasan juri gagal dihapus.",
+        true,
+      );
+    } finally {
+      setAssignmentBusy(false);
+    }
+  };
 
   const updateTitle = (value: string) => {
     setTitle(value);
@@ -6300,101 +6325,76 @@ function CompetitionWorkspace({
               const assigned = data.judgeAssignments.filter(
                 (assignment) => assignment.competitionId === competition.id,
               );
-              const assignedIds = new Set(assigned.map((item) => item.juriId));
-              const availableJudges = data.judges.filter(
-                (judge) => !assignedIds.has(judge.id),
-              );
-              const selectedJudge = availableJudges.some(
-                (judge) => judge.id === selectedJudges[competition.id],
-              )
-                ? selectedJudges[competition.id]
-                : (availableJudges[0]?.id ?? "");
+              const assignedNames = assigned
+                .map(
+                  (assignment) =>
+                    data.judges.find((judge) => judge.id === assignment.juriId)
+                      ?.name,
+                )
+                .filter((name): name is string => Boolean(name));
               return (
-                <div className="activity-row" key={competition.id}>
+                <div
+                  className="activity-row judge-assignment-row"
+                  key={competition.id}
+                >
                   <span className="activity-copy">
                     <strong>{competition.title}</strong>
                     <span>
                       {assigned.length
-                        ? assigned
-                            .map(
-                              (assignment) =>
-                                data.judges.find(
-                                  (judge) => judge.id === assignment.juriId,
-                                )?.name,
-                            )
-                            .filter(Boolean)
-                            .join(", ")
+                        ? `${assigned.length} juri ditugaskan`
                         : "Belum ada juri yang ditugaskan"}
                     </span>
-                    {assigned.map((assignment) => {
-                      const judge = data.judges.find(
-                        (item) => item.id === assignment.juriId,
-                      );
-                      return (
-                        <button
-                          className="text-link"
-                          disabled={assignmentBusy}
-                          key={assignment.id}
-                          onClick={() => {
-                            setAssignmentBusy(true);
-                            void removeJudgeAssignment(assignment.id)
-                              .then(() =>
-                                notify(
-                                  `Penugasan ${judge?.name ?? "juri"} dihapus.`,
-                                ),
-                              )
-                              .catch((error: unknown) => {
-                                console.error("Gagal menghapus penugasan juri.", error);
-                                notify("Penugasan juri gagal dihapus.", true);
-                              })
-                              .finally(() => setAssignmentBusy(false));
-                          }}
-                        >
-                          Hapus {judge?.name ?? "juri"}
-                        </button>
-                      );
-                    })}
                   </span>
-                  <div className="form-row">
-                    <select
-                      aria-label={`Pilih juri untuk ${competition.title}`}
-                      className="field"
-                      disabled={!availableJudges.length || assignmentBusy}
-                      value={selectedJudge}
-                      onChange={(event) =>
-                        setSelectedJudges((current) => ({
-                          ...current,
-                          [competition.id]: event.target.value,
-                        }))
+                  <details className="judge-assignment-picker">
+                    <summary
+                      className="judge-assignment-trigger"
+                      aria-label={
+                        assignedNames.length
+                          ? `Juri yang ditugaskan: ${assignedNames.join(", ")}. Klik untuk mengubah penugasan ${competition.title}.`
+                          : `Pilih juri untuk ${competition.title}`
                       }
                     >
-                      {availableJudges.length ? (
-                        availableJudges.map((judge) => (
-                          <option key={judge.id} value={judge.id}>
-                            {judge.name}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">Semua juri sudah ditugaskan</option>
-                      )}
-                    </select>
-                    <button
-                      className="button button-small"
-                      disabled={!selectedJudge || assignmentBusy}
-                      onClick={() => {
-                        setAssignmentBusy(true);
-                        void assignJudge(selectedJudge, competition.id)
-                          .then(() => notify("Juri berhasil ditugaskan."))
-                          .catch((error: unknown) => {
-                            console.error("Gagal menetapkan juri.", error);
-                            notify("Juri gagal ditugaskan.", true);
-                          })
-                          .finally(() => setAssignmentBusy(false));
-                      }}
+                      <span>
+                        {assignedNames.length
+                          ? assignedNames.join(", ")
+                          : "Pilih satu atau beberapa juri"}
+                      </span>
+                      <ChevronDown aria-hidden="true" />
+                    </summary>
+                    <div
+                      className="judge-assignment-options"
+                      role="group"
+                      aria-label={`Daftar juri untuk ${competition.title}`}
                     >
-                      Tugaskan
-                    </button>
-                  </div>
+                      <p>Pilih satu atau beberapa juri.</p>
+                      {data.judges.map((judge) => {
+                        const assignment = assigned.find(
+                          (item) => item.juriId === judge.id,
+                        );
+                        return (
+                          <label
+                            className="judge-assignment-option"
+                            key={judge.id}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(assignment)}
+                              disabled={assignmentBusy}
+                              onChange={(event) =>
+                                void toggleJudgeAssignment(
+                                  competition.id,
+                                  judge.id,
+                                  assignment?.id,
+                                  event.target.checked,
+                                )
+                              }
+                            />
+                            <span>{judge.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </details>
                 </div>
               );
             })}
