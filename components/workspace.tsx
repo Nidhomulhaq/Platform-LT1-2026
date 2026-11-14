@@ -491,59 +491,6 @@ function workspaceNavigation(
   ];
 }
 
-const workspaceMenuDescriptions: Partial<Record<View, string>> = {
-  leaderboard: "Lihat peringkat regu yang sudah dipublikasikan.",
-  scan: "Pindai kode QR untuk membuka tugas kegiatan.",
-  teamScores: "Pantau hasil penilaian dan progres regu.",
-  profile: "Periksa informasi akun dan data peserta.",
-  accounts: "Kelola akun peserta dan petugas kegiatan.",
-  scores: "Tinjau dan tindak lanjuti nilai yang masuk.",
-  teams: "Atur regu, peserta, dan pembagian anggota.",
-  schools: "Kelola pangkalan yang mengikuti kegiatan.",
-  competitions: "Atur mata lomba dan kriteria penilaian.",
-  cbtQuestions: "Susun soal pilihan ganda dan kunci jawaban CBT.",
-  judgeAssignments: "Tentukan juri untuk setiap mata lomba.",
-  panitiaAssignments: "Atur penugasan panitia di setiap pos.",
-  publication: "Kelola publikasi papan skor dan sertifikat.",
-  training: "Lihat kalender dan catatan latihan regu.",
-  trainingReports: "Konfirmasi latihan dan unduh laporan terverifikasi.",
-  operatorSchedule: "Susun rundown kegiatan dan penanggung jawabnya.",
-  panitiaSchedule: "Susun rundown kegiatan dan penanggung jawabnya.",
-  schedule: "Lihat urutan waktu kegiatan lomba.",
-  juri: "Masukkan nilai untuk regu pada mata lomba yang ditugaskan.",
-  panitia: "Pantau kegiatan dan catat kehadiran regu.",
-  pendamping: "Daftarkan peserta dan kelola data regu dampingan.",
-};
-
-function WorkspaceMenu({ role }: { role: Role }) {
-  const { data } = useWorkspace();
-  const items = workspaceNavigation(role, data).filter(
-    (item) => item.view !== dashboardViewForRole(role),
-  );
-
-  return (
-    <section className="workspace-menu" aria-label="Menu ruang kerja">
-      <SectionHeading
-        title="Menu ruang kerja"
-        detail="Pilih menu untuk melanjutkan pekerjaan."
-      />
-      <div className="workspace-menu-grid">
-        {items.map((item) => (
-          <Link className="workspace-menu-item" href={item.href} key={item.href}>
-            <IconForView view={item.view} />
-            <span className="workspace-menu-copy">
-              <strong>{item.label}</strong>
-              <span>{workspaceMenuDescriptions[item.view]}</span>
-            </span>
-            {item.count ? <span className="nav-count">{item.count}</span> : null}
-            <ArrowRight className="workspace-menu-arrow" aria-hidden="true" />
-          </Link>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function WorkspaceFrame({
   view,
   children,
@@ -815,7 +762,7 @@ function WorkspaceFrame({
         <div className="content">{children}</div>
       </main>
       {showBottomNavigation ? (
-        <nav className="workspace-tab-bar" aria-label="Navigasi ruang kerja">
+        <nav className="workspace-tab-bar" aria-label="Navigasi pintasan">
           {bottomNavigation(role).map((item) => {
             const active =
               item.view === "participant"
@@ -3474,7 +3421,6 @@ function OperatorDashboard() {
           </div>
         ))}
       </div>
-      <WorkspaceMenu role="operator" />
       <div className="content-grid">
         <section className="panel panel-pad">
           <SectionHeading
@@ -3605,7 +3551,6 @@ function RoleWorkspaceDashboard({
         fallbackName={dashboardCopy.fallbackName}
         description={dashboardCopy.description}
       />
-      <WorkspaceMenu role={role} />
     </>
   );
 }
