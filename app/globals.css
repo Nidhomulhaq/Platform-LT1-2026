@@ -1912,19 +1912,14 @@ textarea:focus-visible {
   margin-bottom: 16px;
 }
 
-.training-dialog-calendar {
-  gap: 2px;
-}
-
-.training-dialog-calendar .training-day {
-  min-height: 108px;
-}
-
-.training-calendar-selected-day {
-  min-height: 24px;
-  margin: 2px 0 14px;
-  color: var(--muted);
-  font-size: 13px;
+.training-calendar-preview {
+  display: block;
+  width: min(100%, 360px);
+  height: auto;
+  max-height: 48dvh;
+  margin: 0 auto 16px;
+  border-radius: var(--radius-card);
+  object-fit: contain;
 }
 
 .training-dialog-actions {
@@ -2130,10 +2125,6 @@ textarea:focus-visible {
   .training-calendar-download {
     padding: 8px 10px;
     font-size: 12px;
-  }
-
-  .training-dialog-calendar .training-day {
-    min-height: 100px;
   }
 
   .schedule-form-card {
