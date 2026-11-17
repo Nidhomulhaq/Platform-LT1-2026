@@ -11,14 +11,15 @@ feel approachable and easy to scan. A small original LT-1 scout companion may
 add character to mobile page headers; do not copy Ruangguru's mascot, logo,
 artwork, or product-specific content.
 
-Keep the LT-1 identity recognizable. Green (`--primary: #1b7a3e`) remains the
-brand and primary-action color. Blue, teal, and violet gradients may add energy
-to shared mobile page headers and participant welcome or progress areas, while
-the rest of each page stays on white and near-white surfaces for legibility.
-Use the existing positive,
-warning, and negative tokens for status rather than inventing per-component
-status colors. Decorative shapes should support the hierarchy and never hide
-task information.
+Keep the LT-1 identity recognizable through its logo and original scout
+companion. Use Ruangguru-inspired blue and turquoise as the main interface
+colors, with violet, sunny yellow, and coral as small icon and illustration
+accents. Blue (`--primary: #2c6fc2`) is the primary action and selection color;
+green remains the positive-status color. Use blue-to-violet gradients in shared
+mobile headers and participant welcome or progress areas, while the rest of
+each page stays on white and cool near-white surfaces for legibility. Keep
+positive, warning, and negative status colors semantic. Decorative shapes
+should support the hierarchy and never hide task information.
 
 Use the existing Inter/system font stack for clear Indonesian labels and
 scannable operational data. Keep headings distinct from body copy, use
@@ -63,8 +64,10 @@ status.
 
 Use restrained gradients and shadows to establish hierarchy in shared mobile
 headers and participant welcome or progress cards, not as decoration on every
-panel. Keep other role workspaces quieter so tables, scores, schedules, and
-forms stay easy to read.
+panel. Use small, softly colored backgrounds behind familiar line icons to add
+the friendly, colorful subject-icon feel from the reference while preserving
+clear icon shapes and labels. Keep other role workspaces quieter so tables,
+scores, schedules, and forms stay easy to read.
 Scale short headings fluidly where useful, and preserve comfortable body-text
 sizes and visible keyboard focus.
 
@@ -75,7 +78,7 @@ new functionality.
 
 ## Design dials
 
-- Energy: 3 — welcoming and lively, anchored by the LT-1 green identity.
+- Energy: 4 — bright and encouraging, anchored by the LT-1 logo and scout character.
 - Rhythm: 3 — clear card sections with comfortable space for scanning.
 - Motion: 2 — quick feedback for taps and selections, with reduced motion
   respected.
