@@ -4279,30 +4279,6 @@ textarea:focus-visible {
     min-height: 58px;
   }
 
-  .participant-workspace:has(.participant-dashboard-grid) .topbar {
-    margin-inline: -16px;
-    padding-inline: 16px;
-    border: 0;
-    background: linear-gradient(115deg, #3b9eb9, #615fc9 72%, #785bd0);
-  }
-
-  .participant-workspace:has(.participant-dashboard-grid) .page-heading {
-    min-height: auto;
-    margin: 0 -16px;
-    padding: 11px 16px 20px;
-    background: linear-gradient(115deg, #3b9eb9, #615fc9 72%, #785bd0);
-    color: #fff;
-  }
-
-  .participant-workspace:has(.participant-dashboard-grid) .page-heading h1 {
-    color: inherit;
-  }
-
-  .participant-workspace:has(.participant-dashboard-grid) .page-heading p {
-    margin-top: 5px;
-    color: rgb(255 255 255 / 82%);
-  }
-
   .workspace-tab-bar {
     right: 0;
     bottom: 0;
@@ -4532,5 +4508,205 @@ textarea:focus-visible {
   .badge-item:active {
     transform: scale(0.99);
     border-color: rgb(27 122 62 / 24%);
+  }
+}
+
+/* Shared learning-app styling for every signed-in role. */
+@media (max-width: 600px) {
+  .workspace {
+    background: #f4f7fb;
+  }
+
+  .workspace-main-shell {
+    padding-top: 0;
+  }
+
+  .workspace .topbar {
+    min-height: 58px;
+    margin-inline: -16px;
+    padding-inline: 16px;
+    border: 0;
+    background: linear-gradient(115deg, #3b9eb9, #615fc9 72%, #785bd0);
+  }
+
+  .workspace .page-heading {
+    position: relative;
+    min-height: 112px;
+    align-items: flex-start;
+    justify-content: center;
+    margin: 0 -16px 16px;
+    padding: 13px 88px 18px 16px;
+    border-radius: 0 0 24px 24px;
+    background: linear-gradient(115deg, #3b9eb9, #615fc9 72%, #785bd0);
+    color: #fff;
+  }
+
+  .workspace .page-heading > div:first-child {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+  }
+
+  .workspace .page-heading h1 {
+    color: inherit;
+    font-size: clamp(22px, 6vw, 26px);
+  }
+
+  .workspace .page-heading p {
+    margin-top: 5px;
+    color: rgb(255 255 255 / 84%);
+    font-size: 13px;
+    text-wrap: pretty;
+  }
+
+  .workspace .page-heading::after {
+    position: absolute;
+    inset: 9px 9px auto auto;
+    width: 78px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 12%) url("/lt1-sahabat.svg") center / 92% no-repeat;
+    content: "";
+    pointer-events: none;
+  }
+
+  .workspace .heading-actions {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+  }
+
+  .workspace .heading-actions .button {
+    border-color: rgb(255 255 255 / 30%);
+    border-radius: 12px;
+    background: rgb(255 255 255 / 15%);
+    color: #fff;
+  }
+
+  .workspace .heading-actions .button:hover:not(:disabled) {
+    background: rgb(255 255 255 / 24%);
+  }
+
+  .workspace .page-heading + * {
+    scroll-margin-top: 12px;
+  }
+
+  .workspace .panel,
+  .workspace .certificate-panel,
+  .workspace .stat-cell,
+  .workspace .schedule-form-card,
+  .workspace .school-card {
+    border-radius: 18px;
+    box-shadow: 0 5px 18px rgb(35 67 52 / 5%);
+  }
+
+  .workspace .panel-pad {
+    padding: 18px;
+  }
+
+  .workspace .section-heading {
+    align-items: flex-start;
+  }
+
+  .workspace .section-heading h2 {
+    font-size: 17px;
+    text-wrap: balance;
+  }
+
+  .workspace .button,
+  .workspace .button-small,
+  .workspace .button-quiet,
+  .workspace .icon-button,
+  .workspace .field,
+  .workspace .filter-select {
+    min-height: 44px;
+    border-radius: 12px;
+  }
+
+  .workspace .button:active:not(:disabled),
+  .workspace .nav-link:active,
+  .workspace .text-link:active {
+    transform: scale(0.97);
+  }
+
+  .workspace .nav-link {
+    min-height: 52px;
+    gap: 10px;
+    border-radius: 14px;
+    font-size: 13px;
+  }
+
+  .workspace .nav-link svg {
+    width: 18px;
+    height: 18px;
+    padding: 7px;
+    border-radius: 11px;
+    background: #eef4ff;
+    color: #477bd0;
+    box-sizing: content-box;
+  }
+
+  .workspace .nav-link[aria-current="page"] svg {
+    background: #e1f3e9;
+    color: #16744a;
+  }
+
+  .workspace .stats-grid {
+    gap: 10px;
+  }
+
+  .workspace .stat-cell {
+    min-height: 108px;
+    padding: 14px;
+    border: 1px solid #e5ebf4;
+    background: linear-gradient(145deg, #fff, #f5f8ff);
+  }
+
+  .workspace .stat-cell:nth-child(4n + 2) {
+    background: linear-gradient(145deg, #fff, #f1fbf8);
+  }
+
+  .workspace .stat-cell strong {
+    font-size: clamp(22px, 7vw, 28px);
+  }
+
+  .workspace .competition-symbol,
+  .workspace .badge-seal,
+  .workspace .certificate-mark {
+    border-radius: 15px;
+  }
+
+  .workspace .role-chip,
+  .workspace .status-pill {
+    border-radius: 999px;
+  }
+
+  .workspace .account-trigger,
+  .workspace .account-menu a,
+  .workspace .account-menu button {
+    min-height: 44px;
+    border-radius: 12px;
+  }
+
+  .workspace .workspace-tab-bar {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 601px) and (hover: hover) {
+  .workspace .panel,
+  .workspace .stat-cell,
+  .workspace .competition-row,
+  .workspace .badge-item {
+    transition:
+      transform var(--motion-fast) var(--ease-ui),
+      box-shadow var(--motion-ui) var(--ease-ui),
+      border-color var(--motion-ui) var(--ease-ui);
+  }
+
+  .workspace .panel:hover,
+  .workspace .stat-cell:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgb(35 67 52 / 9%);
   }
 }

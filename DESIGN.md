@@ -7,13 +7,15 @@ companions, judges, and organizers. Take cues from Ruangguru's welcoming
 learning home: bright color near the top of the screen, friendly rounded
 surfaces, clear progress, recognizable icons, and a persistent bottom
 navigation on phones. Use those visual cues to make the existing LT-1 tasks
-feel approachable and easy to scan; do not copy Ruangguru's logo, artwork, or
-product-specific content.
+feel approachable and easy to scan. A small original LT-1 scout companion may
+add character to mobile page headers; do not copy Ruangguru's mascot, logo,
+artwork, or product-specific content.
 
 Keep the LT-1 identity recognizable. Green (`--primary: #1b7a3e`) remains the
 brand and primary-action color. Blue, teal, and violet gradients may add energy
-to participant welcome and progress areas, while the rest of the page stays on
-white and near-white surfaces for legibility. Use the existing positive,
+to shared mobile page headers and participant welcome or progress areas, while
+the rest of each page stays on white and near-white surfaces for legibility.
+Use the existing positive,
 warning, and negative tokens for status rather than inventing per-component
 status colors. Decorative shapes should support the hierarchy and never hide
 task information.
@@ -59,9 +61,10 @@ intentionally omitted to preserve the established global styles. Do not place
 muted text on low-contrast surfaces or rely on color alone to communicate
 status.
 
-Use restrained gradients and shadows to establish hierarchy on participant
-welcome and progress cards, not as decoration on every panel. Keep other role
-workspaces quieter so tables, scores, schedules, and forms stay easy to read.
+Use restrained gradients and shadows to establish hierarchy in shared mobile
+headers and participant welcome or progress cards, not as decoration on every
+panel. Keep other role workspaces quieter so tables, scores, schedules, and
+forms stay easy to read.
 Scale short headings fluidly where useful, and preserve comfortable body-text
 sizes and visible keyboard focus.
 
