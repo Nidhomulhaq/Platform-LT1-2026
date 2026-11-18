@@ -2855,7 +2855,12 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
           )}
 
           {profile?.role === "pendamping_regu" ? (
-            <TrainingTeamChart teams={data.teams} logs={data.trainingLogs} />
+            <TrainingTeamChart
+              teams={team ? [team] : []}
+              logs={teamLogs}
+              title="Progres latihan regu"
+              detail={`Jumlah laporan latihan yang tercatat untuk Regu ${team?.name ?? "dampingan Anda"}, termasuk yang menunggu konfirmasi.`}
+            />
           ) : null}
 
           <section className="panel panel-pad training-log-list">
@@ -3006,9 +3011,13 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
 function TrainingTeamChart({
   teams,
   logs,
+  title = "Progres latihan antar regu",
+  detail = "Perbandingan jumlah laporan dan porsinya dari total latihan seluruh regu, termasuk yang menunggu konfirmasi.",
 }: {
   teams: Team[];
   logs: TrainingLog[];
+  title?: string;
+  detail?: string;
 }) {
   const teamTrainingCounts = React.useMemo(() => {
     const counts = new Map<string, number>();
@@ -3040,8 +3049,8 @@ function TrainingTeamChart({
   return (
     <section className="panel panel-pad training-team-summary">
       <SectionHeading
-        title="Progres latihan antar regu"
-        detail="Perbandingan jumlah laporan dan porsinya dari total latihan seluruh regu, termasuk yang menunggu konfirmasi."
+        title={title}
+        detail={detail}
         action={<span className="role-chip">{totalTeamTrainingCount} latihan tercatat</span>}
       />
       {teamTrainingCounts.length ? (
@@ -3553,6 +3562,14 @@ function RoleWorkspaceDashboard({
 }: {
   role: "juri" | "panitia" | "pendamping_regu";
 }) {
+  const { data, profile } = useWorkspace();
+  const companionTeam =
+    role === "pendamping_regu"
+      ? data.teams.find((team) => team.pendampingId === profile?.id)
+      : undefined;
+  const companionTeamLogs = data.trainingLogs.filter(
+    (log) => log.teamId === companionTeam?.id,
+  );
   const dashboardCopy = {
     juri: {
       description: "Buka penugasan dan lanjutkan penilaian mata lomba.",
@@ -3563,7 +3580,8 @@ function RoleWorkspaceDashboard({
       fallbackName: "Panitia",
     },
     pendamping_regu: {
-      description: "Kelola pendaftaran peserta dan data regu dampingan.",
+      description:
+        "Kelola pendaftaran peserta dan pantau progres latihan regu dampingan.",
       fallbackName: "Pendamping",
     },
   }[role];
@@ -3574,6 +3592,14 @@ function RoleWorkspaceDashboard({
         fallbackName={dashboardCopy.fallbackName}
         description={dashboardCopy.description}
       />
+      {role === "pendamping_regu" ? (
+        <TrainingTeamChart
+          teams={companionTeam ? [companionTeam] : []}
+          logs={companionTeamLogs}
+          title="Progres latihan regu"
+          detail={`Jumlah laporan latihan yang tercatat untuk Regu ${companionTeam?.name ?? "dampingan Anda"}, termasuk yang menunggu konfirmasi.`}
+        />
+      ) : null}
     </>
   );
 }
