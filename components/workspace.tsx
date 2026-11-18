@@ -3017,63 +3017,61 @@ function TrainingTeamChart({
     }
     return teams.map((team) => ({ team, count: counts.get(team.id) ?? 0 }));
   }, [logs, teams]);
-  const maximumTeamTrainingCount = Math.max(
+  const totalTeamTrainingCount = teamTrainingCounts.reduce(
+    (total, { count }) => total + count,
     0,
-    ...teamTrainingCounts.map(({ count }) => count),
   );
+  const chartColors = ["#f05a24", "#167d5a", "#3778c2", "#b04e91", "#d1a326"];
+  let nextAngle = 0;
+  const pieStops = teamTrainingCounts.map(({ count }, index) => {
+    const startAngle = nextAngle;
+    nextAngle += totalTeamTrainingCount
+      ? (count / totalTeamTrainingCount) * 360
+      : 0;
+    return `${chartColors[index % chartColors.length]} ${startAngle}deg ${nextAngle}deg`;
+  });
+  const percentage = (count: number) =>
+    totalTeamTrainingCount
+      ? new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(
+          (count / totalTeamTrainingCount) * 100,
+        )
+      : "0";
 
   return (
     <section className="panel panel-pad training-team-summary">
       <SectionHeading
-        title="Perbandingan latihan antar regu"
-        detail="Jumlah seluruh laporan latihan yang tersimpan, termasuk yang menunggu konfirmasi."
-        action={<span className="role-chip">{logs.length} latihan tercatat</span>}
+        title="Progres latihan antar regu"
+        detail="Perbandingan jumlah laporan dan porsinya dari total latihan seluruh regu, termasuk yang menunggu konfirmasi."
+        action={<span className="role-chip">{totalTeamTrainingCount} latihan tercatat</span>}
       />
       {teamTrainingCounts.length ? (
-        <div
-          className="training-column-chart-scroll"
-          role="region"
-          aria-label="Grafik kolom jumlah latihan setiap regu"
-          tabIndex={0}
-        >
-          <ol
-            className="training-column-chart"
-            aria-hidden="true"
-          >
-            {teamTrainingCounts.map(({ team, count }) => (
-              <li className="training-column" key={team.id}>
-                <strong className="training-column-value">{count}</strong>
-                <div className="training-column-plot" aria-hidden="true">
-                  <span
-                    className="training-column-bar"
-                    style={{
-                      height: `${maximumTeamTrainingCount
-                        ? (count / maximumTeamTrainingCount) * 100
-                        : 0}%`,
-                    }}
-                  />
-                </div>
-                <span className="training-column-label">Regu {team.name}</span>
+        <div className="training-pie-layout">
+          <div
+            className="training-pie-chart"
+            role="img"
+            aria-label={`Diagram pie progres latihan ${teamTrainingCounts
+              .map(({ team, count }) => `Regu ${team.name} ${count} laporan`)
+              .join(", ")}`}
+            style={{
+              background: totalTeamTrainingCount
+                ? `conic-gradient(${pieStops.join(", ")})`
+                : "var(--surface-active)",
+            }}
+          />
+          <ul className="training-pie-legend" aria-label="Progres latihan tiap regu">
+            {teamTrainingCounts.map(({ team, count }, index) => (
+              <li className="training-pie-legend-row" key={team.id}>
+                <span
+                  className="training-pie-swatch"
+                  style={{ backgroundColor: chartColors[index % chartColors.length] }}
+                  aria-hidden="true"
+                />
+                <span className="training-pie-team">Regu {team.name}</span>
+                <strong>{count} latihan</strong>
+                <span className="training-pie-percentage">{percentage(count)}%</span>
               </li>
             ))}
-          </ol>
-          <table className="sr-only">
-            <caption>Jumlah laporan latihan menurut regu</caption>
-            <thead>
-              <tr>
-                <th scope="col">Regu</th>
-                <th scope="col">Jumlah latihan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teamTrainingCounts.map(({ team, count }) => (
-                <tr key={team.id}>
-                  <th scope="row">Regu {team.name}</th>
-                  <td>{count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          </ul>
         </div>
       ) : (
         <div className="empty-state">

@@ -1668,69 +1668,62 @@ textarea:focus-visible {
   min-width: 760px;
 }
 
-.training-column-chart-scroll {
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
+.training-pie-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 28px;
+  margin-top: 8px;
 }
 
-.training-column-chart {
+.training-pie-chart {
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  justify-self: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+.training-pie-legend {
   display: grid;
-  min-width: 460px;
-  min-height: 240px;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: clamp(12px, 3vw, 28px);
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.training-column {
+.training-pie-legend-row {
   display: grid;
   min-width: 0;
-  grid-template-rows: 22px minmax(120px, 1fr) 38px;
-  justify-items: center;
-  gap: 7px;
-}
-
-.training-column-value {
-  align-self: end;
-  color: var(--text);
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
   font-size: 13px;
-  font-variant-numeric: tabular-nums;
 }
 
-.training-column-plot {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: flex-end;
-  justify-content: center;
-  border-bottom: 1px solid var(--border);
-  background: repeating-linear-gradient(
-    to top,
-    transparent 0,
-    transparent calc(25% - 1px),
-    var(--border) 25%,
-    transparent calc(25% + 1px)
-  );
+.training-pie-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
 }
 
-.training-column-bar {
-  width: min(52px, 68%);
-  min-height: 0;
-  border-radius: 8px 8px 2px 2px;
-  background: var(--accent);
-  transition: height var(--motion-ui) var(--ease-ui);
-}
-
-.training-column-label {
-  max-width: 100%;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-  text-align: center;
+.training-pie-team {
+  min-width: 0;
   overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.training-pie-legend-row strong,
+.training-pie-percentage {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.training-pie-percentage {
+  min-width: 5ch;
+  color: var(--muted);
+  text-align: right;
 }
 
 .training-history-controls {
@@ -2089,13 +2082,19 @@ textarea:focus-visible {
     flex: auto;
   }
 
-  .training-column-chart {
-    min-height: 218px;
-    gap: 12px;
+  .training-pie-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
   }
 
-  .training-column {
-    grid-template-rows: 22px minmax(112px, 1fr) 38px;
+  .training-pie-chart {
+    width: min(200px, 70vw);
+  }
+
+  .training-pie-legend-row {
+    grid-template-columns: 12px minmax(0, 1fr) auto auto;
+    gap: 7px;
+    font-size: 12px;
   }
 
   .training-log-actions {
