@@ -2854,6 +2854,10 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
             </div>
           )}
 
+          {profile?.role === "pendamping_regu" ? (
+            <TrainingTeamChart teams={data.teams} logs={data.trainingLogs} />
+          ) : null}
+
           <section className="panel panel-pad training-log-list">
             <SectionHeading
               title="Catatan latihan"
@@ -2999,6 +3003,88 @@ function TrainingWorkspace({ notify }: { notify: Notify }) {
   );
 }
 
+function TrainingTeamChart({
+  teams,
+  logs,
+}: {
+  teams: Team[];
+  logs: TrainingLog[];
+}) {
+  const teamTrainingCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const log of logs) {
+      counts.set(log.teamId, (counts.get(log.teamId) ?? 0) + 1);
+    }
+    return teams.map((team) => ({ team, count: counts.get(team.id) ?? 0 }));
+  }, [logs, teams]);
+  const maximumTeamTrainingCount = Math.max(
+    0,
+    ...teamTrainingCounts.map(({ count }) => count),
+  );
+
+  return (
+    <section className="panel panel-pad training-team-summary">
+      <SectionHeading
+        title="Perbandingan latihan antar regu"
+        detail="Jumlah seluruh laporan latihan yang tersimpan, termasuk yang menunggu konfirmasi."
+        action={<span className="role-chip">{logs.length} latihan tercatat</span>}
+      />
+      {teamTrainingCounts.length ? (
+        <div
+          className="training-column-chart-scroll"
+          role="region"
+          aria-label="Grafik kolom jumlah latihan setiap regu"
+          tabIndex={0}
+        >
+          <ol
+            className="training-column-chart"
+            aria-hidden="true"
+          >
+            {teamTrainingCounts.map(({ team, count }) => (
+              <li className="training-column" key={team.id}>
+                <strong className="training-column-value">{count}</strong>
+                <div className="training-column-plot" aria-hidden="true">
+                  <span
+                    className="training-column-bar"
+                    style={{
+                      height: `${maximumTeamTrainingCount
+                        ? (count / maximumTeamTrainingCount) * 100
+                        : 0}%`,
+                    }}
+                  />
+                </div>
+                <span className="training-column-label">Regu {team.name}</span>
+              </li>
+            ))}
+          </ol>
+          <table className="sr-only">
+            <caption>Jumlah laporan latihan menurut regu</caption>
+            <thead>
+              <tr>
+                <th scope="col">Regu</th>
+                <th scope="col">Jumlah latihan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teamTrainingCounts.map(({ team, count }) => (
+                <tr key={team.id}>
+                  <th scope="row">Regu {team.name}</th>
+                  <td>{count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="empty-state">
+          <strong>Data regu belum tersedia</strong>
+          <p>Jumlah latihan akan muncul setelah data regu dimuat.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TrainingReports({ notify }: { notify: Notify }) {
   const {
     data,
@@ -3040,24 +3126,6 @@ function TrainingReports({ notify }: { notify: Notify }) {
       const dateOrder = left.trainingDate.localeCompare(right.trainingDate);
       return dateOrder || left.createdAt.localeCompare(right.createdAt);
     });
-  const teamTrainingCounts = React.useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const log of data.trainingLogs) {
-      counts.set(log.teamId, (counts.get(log.teamId) ?? 0) + 1);
-    }
-    return data.teams
-      .map((team) => ({
-        team,
-        count: counts.get(team.id) ?? 0,
-      }))
-      .sort(
-        (left, right) =>
-          right.count - left.count ||
-          left.team.name.localeCompare(right.team.name, "id"),
-      );
-  }, [data.teams, data.trainingLogs]);
-  const maximumTeamTrainingCount = teamTrainingCounts[0]?.count ?? 0;
-
   const downloadReport = () => {
     const workbook = createTrainingReportWorkbook(exportLogs, data.teams, range.label);
     const file = new Blob([`\uFEFF${workbook}`], {
@@ -3115,6 +3183,7 @@ function TrainingReports({ notify }: { notify: Notify }) {
           <p>{dataRefreshError}</p>
         </div>
       ) : null}
+      <TrainingTeamChart teams={data.teams} logs={data.trainingLogs} />
       <section className="panel panel-pad training-history">
         <SectionHeading
           title="Riwayat latihan"
@@ -3296,50 +3365,6 @@ function TrainingReports({ notify }: { notify: Notify }) {
             <Activity aria-hidden="true" />
             <strong>Belum ada laporan pada tanggal ini</strong>
             <p>Tidak ada catatan latihan pendamping untuk tanggal yang dipilih.</p>
-          </div>
-        )}
-      </section>
-
-      <section className="panel panel-pad training-team-summary">
-        <SectionHeading
-          title="Frekuensi latihan per regu"
-          detail="Jumlah seluruh laporan latihan yang tersimpan, termasuk yang menunggu konfirmasi."
-          action={
-            <span className="role-chip">
-              {data.trainingLogs.length} latihan tercatat
-            </span>
-          }
-        />
-        {teamTrainingCounts.length ? (
-          <ol
-            className="training-frequency-list"
-            aria-label="Frekuensi latihan setiap regu, diurutkan dari terbanyak"
-          >
-            {teamTrainingCounts.map(({ team, count }) => (
-              <li className="training-frequency-row" key={team.id}>
-                <span className="training-frequency-team">Regu {team.name}</span>
-                <span className="training-frequency-chart">
-                  <span className="training-frequency-track" aria-hidden="true">
-                    <span
-                      className="training-frequency-bar"
-                      style={{
-                        width: `${maximumTeamTrainingCount
-                          ? (count / maximumTeamTrainingCount) * 100
-                          : 0}%`,
-                      }}
-                    />
-                  </span>
-                  <strong className="training-frequency-count">
-                    {count} kali
-                  </strong>
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="empty-state">
-            <strong>Data regu belum tersedia</strong>
-            <p>Jumlah latihan akan muncul setelah data regu dimuat.</p>
           </div>
         )}
       </section>
